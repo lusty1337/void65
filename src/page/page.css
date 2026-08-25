@@ -1,0 +1,417 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Instrument+Sans:wght@400;500&family=Martian+Mono:wght@300;400;500&display=swap');
+
+/* палитра снята с самого предмета: чёрное анодирование с зеленоватым
+   подтоном, костяной текст и зелень акцентных колпачков. фон тёмный
+   не ради тёмной темы - сцена и есть фон, а свет из-под приподнятых
+   клавиш на светлом не читается вовсе */
+.v {
+  /* не чистый ноль намеренно: тень может только затемнять,
+     а на нуле ей нечего затемнять */
+  --ground:   #020403;
+  --ground-2: #080d0a;
+  --line:     #17231b;
+  --line-2:   #27392c;
+
+  --bone:     #f4f2ea;
+  --bone-2:   #9cae9f;
+  --bone-3:   #5f7365;
+
+  /* в полную силу: это цвет акцентных колпачков, и приглушить его -
+     значит погасить единственный цвет на сайте */
+  --sage:     #9fe84a;
+  --sage-dim: #5f9427;
+  --amber:    #f5a623;
+
+  --pad: clamp(20px, 5vw, 96px);
+  /* отступ от верхнего и нижнего края первого экрана - один на оба */
+  --edge: clamp(24px, 3.4vh, 44px);
+  --max: 1680px;
+  --col: 12;
+  --gap: 24px;
+
+  --display: 'Syne', 'Helvetica Neue', Arial, sans-serif;
+  --body: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+  --data: 'Martian Mono', ui-monospace, monospace;
+
+  /* заливка ровная, без пула света по центру: градиент между двумя почти
+     чёрными в восьми битах даёт концентрические кольца, а дизер поверх сам
+     становится видимой плёнкой. отделяет предмет от фона контровой свет */
+  background: var(--ground);
+  color: var(--bone);
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.v *, .v *::before, .v *::after { box-sizing: border-box; }
+.v button { font: inherit; }
+.v :focus-visible { outline: 2px solid var(--sage); outline-offset: 4px; }
+
+/* канвас прибит к окну и лежит под всем содержимым: он не в блоке,
+   он и есть фон страницы, поэтому стыков вокруг 3D нет вовсе */
+.v-stage {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  /* высота от БОЛЬШОГО окна, а не от текущего. на телефоне адресная строка
+     прячется при прокрутке, и канвас на inset: 0 менял размер вместе с ней -
+     а с размером менялись пропорции кадра, и клавиатура прыгала вниз ровно
+     когда заголовок уходил за верхний край. lvh не меняется никогда, а то,
+     что часть канваса уходит под адресную строку, не беда: это фон */
+  height: 100vh;
+  height: 100lvh;
+  /* между подсказкой и документом: сквозь пустой кадр видно то, что ниже,
+     но не сквозь саму клавиатуру */
+  z-index: 1;
+  /* курсор ловим только на первом экране, ниже страница должна
+     прокручиваться, а не цепляться за сцену */
+  pointer-events: none;
+}
+.v-stage canvas { display: block; }
+.v--hero .v-stage { pointer-events: auto; }
+
+/* поверх сцены, но курсор по умолчанию не ловит: иначе текстовый слой
+   перекрывает первый экран целиком и луч до канваса не доходит.
+   кликабельное возвращаем поимённо */
+.v-doc { position: relative; z-index: 2; pointer-events: none; }
+.v-doc a,
+.v-doc button,
+.v-layer,
+.v-order__price { pointer-events: auto; }
+
+.v-grid {
+  display: grid;
+  /* без ширины margin-inline: auto внутри флекс-колонки съедает свободное
+     место и схлопывает сетку по содержимому */
+  width: 100%;
+  grid-template-columns: repeat(var(--col), 1fr);
+  gap: var(--gap);
+  max-width: var(--max);
+  margin: 0 auto;
+  padding-inline: var(--pad);
+}
+
+/* типографика */
+.v-display {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(64px, 11vw, 178px);
+  line-height: 0.88;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+}
+.v-h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(26px, 2.6vw, 40px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.v-lead { margin: 0; font-size: clamp(16px, 1.15vw, 19px); line-height: 1.6; color: var(--bone-2); }
+.v-note { margin: 0; font-size: 14px; line-height: 1.55; color: var(--bone-2); }
+.v-tag {
+  font-family: var(--data);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--sage);
+}
+.v-tag--mute { color: var(--bone-3); }
+.v-data { font-family: var(--data); font-size: 11px; letter-spacing: 0.06em; color: var(--bone-2); }
+
+/* секция выше экрана: акту нужен запас на заваливание. содержимое живёт
+   ровно в первом экране, иначе нижняя строка уходит под сгиб */
+.v-hero { position: relative; }
+.v-hero__screen {
+  height: 100svh;
+  display: flex; flex-direction: column;
+  /* поля сверху и снизу равные: вверху вордмарк, внизу приглашение
+     к скроллу, и разъехавшись они читаются как перекос, а не как воздух */
+  padding-block: var(--edge);
+}
+.v-hero__top { align-items: baseline; }
+.v-mark { grid-column: span 4; font-family: var(--data); font-size: 12px; letter-spacing: 0.16em; }
+.v-mark i { font-style: normal; color: var(--bone-3); }
+.v-hero__edition { grid-column: 8 / span 5; text-align: right; }
+
+.v-hero__head { margin-top: clamp(18px, 4vh, 56px); }
+.v-hero__eyebrow { grid-column: 1 / -1; margin-bottom: 14px; }
+.v-hero__title { grid-column: 1 / -1; }
+/* "65" - формат раскладки и единственное число в имени, поэтому акцентом */
+.v-hero__title b { font-weight: inherit; color: var(--sage); }
+
+.v-hero__sub { margin-top: clamp(20px, 3.5vh, 44px); align-items: start; }
+/* текст в верхней трети, остальное отдано сцене: клавиатура обязана
+   дышать, а не подпирать строку снизу */
+.v-hero__screen > :last-child { margin-bottom: auto; }
+.v-hero__lead { grid-column: 1 / span 5; max-width: 46ch; }
+.v-hero__specs {
+  grid-column: 9 / span 4;
+  display: flex; justify-content: flex-end; gap: 22px;
+  font-family: var(--data); font-size: 11px; letter-spacing: 0.08em; color: var(--bone-3);
+}
+
+/* приглашение к скроллу живёт ПОД сценой: когда клавиатура заваливается
+   к зрителю, она проходит поверх и надпись прячется за предметом,
+   а не гаснет по таймеру */
+.v-hint {
+  position: fixed; z-index: 0;
+  left: var(--pad); bottom: var(--edge);
+  display: flex; align-items: center; gap: 12px;
+  font-family: var(--data); font-size: 10px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--bone-3);
+  opacity: 0; transition: opacity 0.5s ease;
+}
+.v.is-in.is-hint .v-hint { opacity: 1; }
+.v-hint::before {
+  content: ''; width: 1px; height: 26px; background: var(--sage);
+  animation: v-pulse 2.6s ease-in-out infinite;
+}
+@keyframes v-pulse {
+  0%, 100% { transform: scaleY(0.3); transform-origin: top; opacity: 0.4; }
+  50%      { transform: scaleY(1);   transform-origin: top; opacity: 1; }
+}
+
+/* разборка */
+.v-build { position: relative; }
+/* fixed, а не sticky: прилипшая секция отпускает содержимое ровно
+   на последнем слое разборки, и строка про корпус уезжала вверх в тот
+   момент, когда корпус только начинал отходить. здесь появление и уход
+   решает прокрутка, а не край секции */
+.v-build__sticky {
+  position: fixed; inset: 0; z-index: 1;
+  display: flex; align-items: center; pointer-events: none;
+  /* именно visibility, а не одна прозрачность: строки слоёв ловят курсор,
+     и прозрачная колонка во весь экран перехватывала бы его на первом
+     экране. показ мгновенный, уход отложен на длину затухания */
+  visibility: hidden; transition: visibility 0s linear 0.55s;
+}
+.v.is-build .v-build__sticky { visibility: visible; transition: visibility 0s; }
+.v-build__inner { width: 100%; align-items: center; }
+.v-build__head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.v-build__list {
+  grid-column: 9 / span 4;
+  display: flex; flex-direction: column;
+  position: relative;
+  /* ждём, пока клавиатура отъедет влево */
+  opacity: 0; transform: translateX(22px);
+  transition: opacity 0.55s cubic-bezier(0.33, 0, 0.2, 1), transform 0.55s cubic-bezier(0.33, 0, 0.2, 1);
+}
+.v.is-build .v-build__list { opacity: 1; transform: none; }
+/* мягкая растушёвка от правого края: без подложки колонка тонет в слоях,
+   а карточка превратила бы сцену в картинку за окном */
+.v-build__list::before {
+  content: '';
+  position: absolute;
+  /* края конечные: с -100vw элемент шире экрана, и остановки градиента
+     в процентах уезжали за кадр - подложка рисовалась, но её не было видно */
+  inset: -32px calc(var(--pad) * -1) -32px -170px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--ground) 76%, transparent) 26%,
+    color-mix(in oklab, var(--ground) 96%, transparent) 46%
+  );
+  z-index: -1;
+}
+
+.v-layer {
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+  opacity: 0.28;
+  transition: opacity 0.4s ease;
+}
+.v-layer:last-child { border-bottom: 1px solid var(--line); }
+.v-layer.is-past { opacity: 0.55; }
+.v-layer.is-live { opacity: 1; }
+.v-layer__row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.v-layer__name {
+  font-family: var(--display); font-weight: 700; font-size: 15px;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.v-layer.is-live .v-layer__name { color: var(--sage); }
+.v-layer__spec { font-family: var(--data); font-size: 10px; letter-spacing: 0.08em; color: var(--bone-3); }
+.v-layer__note {
+  display: grid; grid-template-rows: 0fr; opacity: 0;
+  transition: grid-template-rows 0.42s cubic-bezier(0.33, 0, 0.2, 1), opacity 0.3s ease;
+}
+.v-layer.is-live .v-layer__note { grid-template-rows: 1fr; opacity: 1; }
+.v-layer__note > span { overflow: hidden; }
+.v-layer__note p { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: var(--bone-2); max-width: 44ch; }
+
+/* тонкая шкала прохода по слоям */
+.v-build__meter { flex: 1; display: flex; gap: 4px; }
+.v-build__meter i { flex: 1; height: 2px; background: var(--line-2); }
+.v-build__meter i.on { background: var(--sage); }
+
+/* остаток от убранного экрана со свитчами: цифры переехали к цене,
+   туда, где их и читают */
+.v-spec { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid var(--line); }
+.v-spec dt { font-family: var(--data); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bone-3); }
+/* костяным, а не янтарным: акцент на сайте один и уже занят кнопкой
+   заказа прямо над списком */
+.v-spec dd { margin: 0; font-family: var(--data); font-size: 12px; color: var(--bone); }
+
+/* заказ */
+.v-order {
+  position: relative;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  /* снизу может стоять панель браузера - считаем отступ от неё,
+     иначе подвал и цена уезжают под неё */
+  padding-block: 0 calc(clamp(28px, 4vh, 56px) + env(safe-area-inset-bottom));
+}
+.v-order__inner {
+  align-items: end; position: relative;
+  /* ждём, пока клавиатура растает слоями. привязано к прокрутке,
+     а не к таймеру, поэтому назад сворачивается само */
+  opacity: 0; transform: translateY(18px);
+  transition: opacity 0.7s cubic-bezier(0.33, 0, 0.2, 1), transform 0.7s cubic-bezier(0.33, 0, 0.2, 1);
+}
+.v.is-order .v-order__inner { opacity: 1; transform: none; }
+/* во всю ширину окна: на сетке подложка не доставала до краёв, и по бокам
+   из-под неё торчали две серые полоски сцены */
+.v-order::before {
+  content: '';
+  position: absolute; inset: auto 0 0 0; height: 72svh;
+  background: linear-gradient(0deg, var(--ground) 44%, transparent);
+  pointer-events: none;
+}
+/* табло стоит прямо на сцене, и подложка ему нужна своя. общая привязана
+   к низу секции, а на телефоне видимая часть окна короче документа: дотянув
+   прокрутку до упора, счётчик выезжал выше неё, прямо на клавиатуру.
+   эта едет вместе с ним и промахнуться не может */
+.v-order__price { grid-column: 1 / span 6; position: relative; }
+.v-order__price::before {
+  content: '';
+  position: absolute;
+  inset: -26px calc(var(--pad) * -1) -26px calc(var(--pad) * -1);
+  background: radial-gradient(
+    130% 108% at 40% 50%,
+    var(--ground) 46%,
+    color-mix(in oklab, var(--ground) 82%, transparent) 68%,
+    transparent
+  );
+  z-index: -1;
+}
+.v-order__eyebrow { margin-bottom: 20px; }
+.v-order__note { margin-top: 20px; }
+.v-order__actions { grid-column: 8 / span 5; display: flex; flex-direction: column; gap: 18px; }
+.v-order__specs { margin: 0; }
+
+.v-btn {
+  display: block; width: 100%; padding: 16px 28px; text-align: center;
+  border-radius: 2px; cursor: pointer; text-decoration: none;
+  font-family: var(--data); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.v-btn--primary { background: var(--sage); border: 1px solid var(--sage); color: var(--ground); }
+.v-btn--primary:hover { background: #b6f072; border-color: #b6f072; }
+.v-btn--ghost { background: transparent; border: 1px solid var(--line-2); color: var(--bone); }
+.v-btn--ghost:hover { border-color: var(--bone-3); background: var(--ground-2); }
+
+.v-foot {
+  /* позиционирован намеренно: подложка финала - абсолютный ::before,
+     и без этого подвал рисовался под ней и просто пропадал */
+  position: relative;
+  max-width: var(--max); margin: clamp(40px, 6vh, 76px) auto 0; width: 100%;
+  padding: 18px var(--pad) 0;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 20px;
+  border-top: 1px solid var(--line);
+  font-family: var(--data); font-size: 10px; letter-spacing: 0.1em; color: var(--bone-3);
+}
+
+/* всё на заставке - CSS-анимации: главный поток в этот момент собирает
+   шейдеры и стоит секундами, requestAnimationFrame встал бы вместе с ним,
+   а композитор продолжает крутить */
+.v-boot {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ground);
+  /* растворяется с запаздыванием: под ней уже идёт первый такт входа,
+     каркас модели, и мгновенный уход показывал готовую картинку */
+  transition: opacity 0.9s cubic-bezier(0.33, 0, 0.2, 1);
+}
+.v-boot.is-done { opacity: 0; pointer-events: none; }
+/* марка и полоса уходят раньше подложки - заставка складывается,
+   а не выключается одним движением */
+.v-boot.is-done .v-boot__inner { opacity: 0; transition: opacity 0.35s ease; }
+.v-boot__inner {
+  width: min(280px, calc(100vw - var(--pad) * 2));
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+  opacity: 0; animation: v-fade 0.8s ease forwards;
+}
+@keyframes v-fade { to { opacity: 1; } }
+.v-boot__mark {
+  font-family: var(--data); font-size: 11px; font-weight: 400;
+  letter-spacing: 0.4em; text-indent: 0.4em; color: var(--bone-2);
+}
+.v-boot__bar { width: 100%; height: 1px; background: var(--line-2); overflow: hidden; }
+.v-boot__bar i {
+  display: block; height: 100%; background: var(--sage);
+  transform: scaleX(0); transform-origin: left;
+  animation: v-bar 2.2s cubic-bezier(0.2, 0.6, 0.2, 1) 0.2s forwards;
+}
+.v-boot.is-ready .v-boot__bar i { animation: v-bar-end 0.3s ease forwards; }
+@keyframes v-bar { to { transform: scaleX(0.82); } }
+@keyframes v-bar-end { from { transform: scaleX(0.82); } to { transform: scaleX(1); } }
+
+/* появление блоков */
+.v-rise { opacity: 0; transform: translateY(14px); }
+.v.is-in .v-rise {
+  opacity: 1; transform: none;
+  transition: opacity 0.7s cubic-bezier(0.33, 0, 0.2, 1), transform 0.7s cubic-bezier(0.33, 0, 0.2, 1);
+  transition-delay: calc(var(--i, 0) * 70ms);
+}
+
+/* узкий экран. не "то же самое, только уже": текст переезжает из колонки
+   сбоку от сцены под неё, и вместе с ним - направление подложки, плотность
+   списка и поимка касаний. кадр самой сцены разворачивает director */
+@media (max-width: 900px) {
+  .v { --col: 6; --gap: 14px; }
+  .v-mark, .v-hero__edition { grid-column: span 6; text-align: left; }
+  .v-hero__lead, .v-hero__specs { grid-column: 1 / -1; justify-content: flex-start; }
+  .v-hero__specs { margin-top: 14px; }
+  .v-build__list, .v-order__price, .v-order__actions { grid-column: 1 / -1; }
+  .v-build__sticky { align-items: flex-end; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  .v-order__actions { margin-top: 28px; }
+
+  /* подложка снизу вверх: текст лежит ПОД клавиатурой, растушёвка справа
+     оставила бы половину строк на голой сцене */
+  .v-build__list::before {
+    inset: -20px calc(var(--pad) * -1) -240px calc(var(--pad) * -1);
+    background: linear-gradient(0deg, var(--ground) 64%, transparent);
+  }
+
+  /* семь раскрытых пояснений не помещаются - держим открытым то, до
+     которого дошла прокрутка. сами строки все на месте: по ним видно,
+     сколько слоёв ещё впереди */
+  .v-layer { padding: 9px 0; }
+  .v-layer:not(.is-live) .v-layer__note { display: none; }
+  .v-layer__name { font-size: 13px; }
+  .v-layer__note p { font-size: 12px; margin-top: 6px; }
+  .v-build__head { margin-bottom: 12px; }
+
+  .v-foot { flex-wrap: wrap; gap: 8px 20px; }
+  .v-order__note { margin-top: 16px; }
+}
+
+/* мелкий телефон: заголовок перестаёт помещаться в строку раньше всего */
+@media (max-width: 420px) {
+  .v-display { font-size: clamp(46px, 15vw, 64px); }
+  .v-hero__specs { gap: 14px; font-size: 10px; }
+  .v-layer__spec { display: none; }
+}
+
+/* наведения на тач-устройстве нет, ловить сценой нечего. а вред есть:
+   канвас на первом экране перехватывает жест, и страница перестаёт
+   прокручиваться пальцем по клавиатуре - ровно по тому месту,
+   куда палец и ляжет */
+.v--touch.v--hero .v-stage { pointer-events: none; }
+.v--touch .v-hint::before { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .v-rise { opacity: 1; transform: none; }
+  .v-hint::before { animation: none; }
+  .v-boot__inner, .v-boot__bar i { animation-duration: 0.01ms; }
+}

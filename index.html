@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0c0f0e" />
+    <title>VOID65 — custom mechanical keyboard</title>
+    <meta
+      name="description"
+      content="A 65% hot-swap keyboard in milled aluminium. Seven layers, taken apart on scroll."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c0f0e'/%3E%3Crect x='9' y='9' width='14' height='14' rx='3' fill='%23a9c68a'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Instrument+Sans:wght@400;500&family=Martian+Mono:wght@300;400;500&family=Barlow+Semi+Condensed:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* цвет обязан совпадать с --ground в page.css: пока не загрузился
+         модуль со стилями, страница красится тем, что написано в документе,
+         и другой цвет здесь дал бы мигание на входе - один кадр одного
+         цвета, следующий другого */
+      html,
+      body {
+        margin: 0;
+        background: #0c0f0e;
+      }
+      /* статичная заставка на то время, пока не смонтировался React.
+         уходит сама, как только в #root что-то появилось: дальше вход рисует
+         уже приложение, и стыка между ними не видно */
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0c0f0e;
+        color: #97a09a;
+        font-family: 'Martian Mono', ui-monospace, monospace;
+        font-size: 11px;
+        letter-spacing: 0.4em;
+        text-indent: 0.4em;
+      }
+      #root:not(:empty) + #boot {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="boot">VOID / 65</div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
