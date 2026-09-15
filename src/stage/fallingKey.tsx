@@ -34,7 +34,9 @@ const LAMP_OFFSET = new THREE.Vector3(1.2, 1.6, 2.6);
 const LAMP_POWER = 18;
 
 export default function FallingKey({ shot }: { shot: MutableRefObject<Shot> }) {
-  const { nodes } = useGLTF('/keycaps.glb') as unknown as { nodes: Record<string, THREE.Mesh> };
+  const { nodes } = useGLTF(`${import.meta.env.BASE_URL}keycaps.glb`) as unknown as {
+    nodes: Record<string, THREE.Mesh>;
+  };
   const group = useRef<THREE.Group>(null);
   const lamp = useRef<THREE.PointLight>(null);
   const atlas = shared('capAtlas', makeLegendAtlas);

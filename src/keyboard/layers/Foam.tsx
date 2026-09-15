@@ -3,6 +3,7 @@ import { TRAY_WIDTH, TRAY_DEPTH, TRAY_CORNER } from '../caseGeometry';
 import { THICKNESS } from '../stack';
 import { SW } from '../switchGeometry';
 import { shared } from '../shared';
+import { REAL_GLASS } from '../../stage/quality';
 
 const MM = 1 / 19.05;
 
@@ -44,19 +45,35 @@ export default function Foam() {
           самая незаметная деталь сборки.
 
           отдельного прохода рендера она не стоит - проход уже идёт ради
-          колпаков свитчей, лист лишь добавляется в его список */}
-      <meshPhysicalMaterial
-        color="#eaf0ff"
-        transmission={1}
-        ior={1.41}
-        thickness={THICKNESS.foam * 6}
-        roughness={0.28}
-        metalness={0}
-        envMapIntensity={0.35}
-        attenuationColor="#1b3f8f"
-        attenuationDistance={0.09}
-        specularIntensity={0.35}
-      />
+          колпаков свитчей, лист лишь добавляется в его список.
+
+          на лёгком уровне преломления нет, см. quality.ts. при этой толщине
+          и этом поглощении просвет гаснет практически в ноль: настоящий
+          лист на экране и так тёмный с мягким бликом, его и рисуем
+          непрозрачным */}
+      {REAL_GLASS ? (
+        <meshPhysicalMaterial
+          color="#eaf0ff"
+          transmission={1}
+          ior={1.41}
+          thickness={THICKNESS.foam * 6}
+          roughness={0.28}
+          metalness={0}
+          envMapIntensity={0.35}
+          attenuationColor="#1b3f8f"
+          attenuationDistance={0.09}
+          specularIntensity={0.35}
+        />
+      ) : (
+        <meshPhysicalMaterial
+          color="#03050b"
+          ior={1.41}
+          roughness={0.28}
+          metalness={0}
+          envMapIntensity={0.35}
+          specularIntensity={0.35}
+        />
+      )}
     </mesh>
   );
 }

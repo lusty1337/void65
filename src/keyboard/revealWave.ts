@@ -22,6 +22,32 @@ export function createRevealUniforms(): RevealUniforms {
   return { uRevealR: { value: 0 }, uRevealOn: { value: 1 } };
 }
 
+// двойники: волна живёт не в самих материалах слоёв, а в их копиях, и копия
+// надета на меш, только пока волна идёт. дорога не проверка в шейдере,
+// а сам discard: шейдер, который может отбросить фрагмент, лишает
+// видеокарту раннего теста глубины, и всё спрятанное под колпачками
+// закрашивается целиком. мобильная видеокарта на таком шейдере ещё
+// и перестаёт отсекать скрытое по плиткам. на замере discard в каждом
+// материале стоил пятую часть кадра.
+//
+// двойник снимается один раз: свойства материалов слоёв на странице
+// не меняются
+const twins = new WeakMap<THREE.Material, THREE.Material>();
+
+export function revealTwin(mat: THREE.Material, u: RevealUniforms): THREE.Material {
+  let twin = twins.get(mat);
+  if (!twin) {
+    twin = mat.clone();
+    // clone переносит свойства, но не правки шейдера: печать легенды
+    // на колпачках и её ключ программы переносим руками
+    twin.onBeforeCompile = mat.onBeforeCompile;
+    twin.customProgramCacheKey = mat.customProgramCacheKey;
+    patchReveal(twin, u);
+    twins.set(mat, twin);
+  }
+  return twin;
+}
+
 /**
  * навесить волну на материал; повторный вызов ничего не делает. метка лежит
  * в userData, а не в отдельном списке: материал может прийти позже, вместе

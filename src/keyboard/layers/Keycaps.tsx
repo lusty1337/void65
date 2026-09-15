@@ -19,7 +19,9 @@ import { makeLegendAtlas, legendStretch } from '../keycapAtlas';
 import { paintLegend } from '../legendPaint';
 import { shared } from '../shared';
 
-const KEYCAPS_URL = '/keycaps.glb';
+// от BASE_URL, а не от корня: на Pages сайт живёт в подпапке домена,
+// и путь от корня уводит мимо файла. в разработке BASE_URL и так "/"
+const KEYCAPS_URL = `${import.meta.env.BASE_URL}keycaps.glb`;
 useGLTF.preload(KEYCAPS_URL);
 
 /** полуразмеры площадки печати легенды в мировых единицах */

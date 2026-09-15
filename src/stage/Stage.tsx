@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { memo, Suspense, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { StageRig } from './rig';
@@ -6,6 +6,7 @@ import { makeShot, shotAt, isHero, SEAT, SPREAD, P_LAND, DROP_INDEX } from './di
 import { CursorTilt, KeyLiftDriver, SwitchGlow } from './hover';
 import RevealWave from './reveal';
 import WireGhost from './ghost';
+import { AdaptiveResolution } from './resolution';
 import { MAX_DPR, SHADOW_EVERY, SHADOW_KIND, WIREFRAME_INTRO } from './quality';
 import { PremiumKeyboard } from '../keyboard/PremiumKeyboard';
 import { BASE_Y } from '../keyboard/stack';
@@ -43,6 +44,21 @@ const LANDING = { x: SEAT.x, z: SEAT.z };
 // не ударом, а ползунком
 const IMPACT_SEC = 1.5;
 
+/** сколько чисел в слепке положения, см. repose */
+const POSE_SIZE = 14;
+
+/** переписать слепок; true - хоть одно число сдвинулось */
+function repose(pose: Float64Array, now: number[]) {
+  let moved = false;
+  for (let i = 0; i < now.length; i++) {
+    if (pose[i] !== now[i]) {
+      pose[i] = now[i];
+      moved = true;
+    }
+  }
+  return moved;
+}
+
 function Rig({
   progress,
   maxScroll,
@@ -78,9 +94,18 @@ function Rig({
   const loose = useRef(-1);
   /** счётчик кадров - по нему на лёгком уровне прореживается карта теней */
   const tick = useRef(0);
+  /** сколько раз ещё перерисовать карту теней; 0 - она совпадает со сценой */
+  const shadowDue = useRef(2);
+  /** положение всего, что отбрасывает тень, на прошлом кадре */
+  const pose = useMemo(() => new Float64Array(POSE_SIZE).fill(NaN), []);
+  /** на какой ход уже расписан буфер разлёта каждого слоя */
+  const spreadAt = useRef<Partial<Record<LayerName, number>>>({});
 
-  // без этого рендерер перерисует карту сам, и прореживание ничего не даст
-  if (SHADOW_EVERY > 1) gl.shadowMap.autoUpdate = false;
+  // карту теней рисуем сами и только когда сдвинулось то, что её
+  // отбрасывает: свет и пол стоят в мире, и на кадрах, где едет одна
+  // камера, карта выходит та же самая. таких кадров на странице много -
+  // отъезд после приземления, подход к цене
+  gl.shadowMap.autoUpdate = false;
 
   const shot = useMemo(makeShot, []);
   // тот же объект в виде рефа: снаружи удобнее читать .current, а сам кадр
@@ -104,10 +129,6 @@ function Rig({
   (window as unknown as Record<string, unknown>).__heroLift = lift;
 
   useFrame((_, dt) => {
-    if (SHADOW_EVERY > 1) {
-      tick.current += 1;
-      gl.shadowMap.needsUpdate = tick.current % SHADOW_EVERY === 0;
-    }
     // прокрутку читаем здесь, на кадре, а не в обработчике scroll: событие
     // и кадр браузера идут вразнобой, за один кадр событий может не прийти
     // ни одного, а может прийти два. камера на значении из обработчика
@@ -186,6 +207,12 @@ function Rig({
         // стопки: крайние стабилизаторы приходили домой раньше пены, которая
         // едет пластом, и на середине хода ныряли сквозь неё
         const stagger = shot.gather >= 0 ? 0 : undefined;
+        // буфер переписываем, только когда ход сдвинулся: по его счётчику
+        // слои пересобирают матрицы всех деталей, а на первом экране
+        // и в падении разлёт сотни кадров подряд стоит на нуле
+        const at = stagger === 0 ? drive + 2 : drive;
+        if (spreadAt.current[layer.key] === at) return;
+        spreadAt.current[layer.key] = at;
         if (layer.key === 'stabilizers')
           fillWave(wave.stabilizers, layer.y, drive, STAB_RADIUS, stagger);
         else fillWave(wave[layer.key as 'keycaps' | 'switches'], layer.y, drive, KEY_RADIUS, stagger);
@@ -195,6 +222,33 @@ function Rig({
         g.position.y = BASE_Y[layer.key] + layer.y * drive;
       }
     });
+
+    // слои переписывают матрицы кадром позже, чем здесь сдвинулся ход,
+    // поэтому после остановки карта догоняет ещё два кадра
+    const moved = repose(pose, [
+      shot.boardY,
+      shot.boardTilt,
+      shot.boardYaw,
+      shot.apart,
+      shot.gather,
+      shot.keyLoose,
+      shot.keyPos.x,
+      shot.keyPos.y,
+      shot.keyPos.z,
+      shot.keyRot.x,
+      shot.keyRot.y,
+      shot.keyRot.z,
+      tilt.current?.rotation.y ?? 0,
+      lift.rev,
+    ]);
+    if (moved) shadowDue.current = 2;
+    tick.current += 1;
+    // в движении на лёгком уровне карта идёт через кадр, но первый же кадр
+    // покоя рисует её обязательно: иначе тень застынет на полшага позади
+    const due = shadowDue.current > 0 && (!moved || tick.current % SHADOW_EVERY === 0);
+    gl.shadowMap.needsUpdate = due;
+    if (due) shadowDue.current -= 1;
+    if (shadowDue.current > 0) invalidate();
   });
 
   return (
@@ -242,7 +296,7 @@ function Rig({
   );
 }
 
-export default function Stage({
+function Stage({
   progress,
   maxScroll,
   redraw,
@@ -261,13 +315,20 @@ export default function Stage({
   onCompiled: () => void;
 }) {
   const floor = useRef<THREE.Mesh | null>(null);
+  // потолок плотности в состоянии, а не константой в пропе: канвас сверяет
+  // проп на каждой своей перерисовке, в том числе на повороте экрана,
+  // и вернул бы спущенную плотность обратно
+  const [dpr, setDpr] = useState(MAX_DPR);
 
   return (
     <div className="v-stage" aria-hidden="true">
       <Canvas
         camera={{ position: [0.9, 4.6, 13.2], fov: 26 }}
-        gl={{ antialias: true, alpha: true }}
-        dpr={MAX_DPR}
+        // сглаживание делает композер в собственном буфере. у холста оно
+        // лишнее: многовыборочный буфер во весь экран, в который приходит
+        // только готовая картинка композера, где рёбер уже нет
+        gl={{ antialias: false, alpha: true }}
+        dpr={[1, dpr]}
         shadows={SHADOW_KIND}
         // сцена статична, пока не крутят колесо и не водят курсором.
         // непрерывный режим на неподвижной картинке - это девятнадцать
@@ -276,6 +337,7 @@ export default function Stage({
         flat
       >
         <StageRig floorRef={floor} />
+        <AdaptiveResolution onDrop={setDpr} />
         <Expose into={redraw} />
         <Rig
           progress={progress}
@@ -290,15 +352,24 @@ export default function Stage({
   );
 }
 
+// страница перерисовывается на каждом шаге подсветки списка слоёв, и без
+// memo вместе с ней сверялось бы всё дерево сцены - сотня объектов ради
+// одной строки в списке
+export default memo(Stage);
+
 /** отдаёт наружу "перерисуй" именно этого канваса */
 function Expose({ into }: { into: MutableRefObject<(() => void) | null> }) {
   const invalidate = useThree((s) => s.invalidate);
+  const get = useThree((s) => s.get);
   useEffect(() => {
     into.current = invalidate;
+    // наружу для scripts/bench.mjs: он глушит цикл и рисует кадры сам,
+    // по одному, иначе время кадра не отделить от ожидания vsync
+    (window as unknown as Record<string, unknown>).__stage = get;
     invalidate();
     return () => {
       into.current = null;
     };
-  }, [invalidate, into]);
+  }, [invalidate, into, get]);
   return null;
 }

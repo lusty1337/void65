@@ -1,7 +1,7 @@
 import { useMemo, useRef, type MutableRefObject } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
-import { createRevealUniforms, patchReveal, REVEAL_MAX } from '../keyboard/revealWave';
+import { useFrame, useThree } from '@react-three/fiber';
+import { createRevealUniforms, revealTwin, REVEAL_MAX } from '../keyboard/revealWave';
 import type { KeyboardLayers, LayerName } from '../keyboard/types';
 
 // клавиатура проступает круговой волной из центра, слой за слоем снизу
@@ -10,7 +10,11 @@ import type { KeyboardLayers, LayerName } from '../keyboard/types';
 // поэтому волна режет фрагменты по расстоянию, прямо в шейдере материала.
 //
 // ходов два, с виду одинаковых: первый идёт по часам под заставкой, второй
-// ведёт прокрутка - им в финале проступает клавиатура над ценой
+// ведёт прокрутка - им в финале проступает клавиатура над ценой.
+//
+// режет не сам материал, а его двойник (revealWave.ts), и надет двойник
+// только пока волна идёт. всё остальное время на мешах обычные материалы
+// без discard, и видеокарта отбрасывает спрятанное до закраски
 
 /** снизу вверх: сначала корпус, последними колпачки */
 const ORDER: LayerName[] = [
@@ -34,6 +38,13 @@ const SWEEP = 0.5;
 /** весь ход волны от первого слоя до последнего */
 const TOTAL = STEP * (ORDER.length - 1) + SWEEP;
 
+/** меш и оба его набора материалов: обычный и с волной */
+type Dress = {
+  mesh: THREE.Mesh;
+  plain: THREE.Material | THREE.Material[];
+  wave: THREE.Material | THREE.Material[];
+};
+
 export default function RevealWave({
   layers,
   shadow,
@@ -48,24 +59,80 @@ export default function RevealWave({
   start: MutableRefObject<number | null>;
   /**
    * ход волны от прокрутки: −1 выключено и видно всё, 0…1 - проявление.
-   * проверка в шейдере стоит кадров, поэтому снята по умолчанию
-   * и включается только на своём отрезке страницы
+   * двойники стоят кадров, поэтому надеваются только на своём отрезке
+   * страницы
    */
   scroll: MutableRefObject<{ reveal: number }>;
   /**
-   * все материалы прошиты и программы собраны. сигнал обязателен: правка
-   * шейдера ставит needsUpdate, и три пересобирает КАЖДУЮ программу сцены.
-   * на старте волны страница замирала на секунды ровно в момент ухода
-   * заставки - волна проходила по часам, и клавиатура появлялась разом
+   * программы двойников собраны, вход можно начинать. сигнал обязателен:
+   * первая отрисовка нового шейдера держит главный поток, и на старте волны
+   * страница замирала на секунды ровно в момент ухода заставки - волна
+   * проходила по часам, и клавиатура появлялась разом
    */
   onCompiled?: () => void;
 }) {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  const redraw = useThree((s) => s.invalidate);
   const uniforms = useMemo(() => ORDER.map(() => createRevealUniforms()), []);
   const done = useRef(false);
   const quiet = useRef(0);
   const compiled = useRef(false);
-  /** держим ли мы сейчас включённой проверку ради прокрутки */
+  /** надеты ли сейчас двойники ради прокрутки */
   const scrolled = useRef(false);
+  const dressed = useRef<Dress[]>([]);
+  const known = useMemo(() => new WeakSet<THREE.Object3D>(), []);
+  /** что надето сейчас: true - двойники с волной */
+  const worn = useRef(false);
+  /** программы обычных материалов собраны, двойников можно снимать */
+  const plainReady = useRef(false);
+
+  // с этим расширением драйвер линкует программы в своих потоках, и спросить
+  // о готовности можно, не останавливая страницу
+  const parallel = useMemo(() => gl.extensions.has('KHR_parallel_shader_compile'), [gl]);
+
+  const wear = (wave: boolean) => {
+    worn.current = wave;
+    for (const d of dressed.current) d.mesh.material = wave ? d.wave : d.plain;
+  };
+
+  // обычные материалы собираются в фоне, пока идёт вход. под заставкой
+  // собирать обе программы каждого материала нельзя: на замере это растягивало
+  // её в полтора раза, а вход всё равно идёт в двойниках.
+  //
+  // собираем в буфер, а не в экран: от того, куда идёт отрисовка, зависит
+  // цветовое пространство программы, а сцена рисуется в буфер композера.
+  // программа, собранная под экран, в кадре не пригодилась бы
+  const compilePlain = () => {
+    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+    const prev = gl.getRenderTarget();
+    wear(false);
+    gl.setRenderTarget(target);
+    // изнанку двустороннего стекла три рисует в буфер преломления отдельной
+    // программой, со стороной BackSide. compile про неё не знает, и она
+    // линковалась бы на живой странице: на замере это секунда стоящего потока
+    const flips = dressed.current
+      .flatMap((d) => (Array.isArray(d.plain) ? d.plain : [d.plain]))
+      .filter((m) => (m as THREE.MeshPhysicalMaterial).transmission > 0 && m.side === THREE.DoubleSide);
+    for (const m of flips) {
+      m.side = THREE.BackSide;
+      m.needsUpdate = true;
+    }
+    const back = gl.compileAsync(scene, camera);
+    for (const m of flips) {
+      m.side = THREE.DoubleSide;
+      m.needsUpdate = true;
+    }
+    const front = gl.compileAsync(scene, camera);
+    gl.setRenderTarget(prev);
+    wear(true);
+    Promise.all([back, front]).then(() => {
+      plainReady.current = true;
+      target.dispose();
+      redraw();
+    });
+  };
 
   /** расставить фронт по слоям: 0 не видно ничего, 1 видно всё */
   const sweep = (t: number) => {
@@ -86,9 +153,16 @@ export default function RevealWave({
         if (!root) return;
         root.traverse((o) => {
           const mesh = o as THREE.Mesh;
-          if (!mesh.isMesh) return;
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          for (const m of mats) if (m && patchReveal(m, uniforms[i])) fresh++;
+          if (!mesh.isMesh || known.has(mesh)) return;
+          known.add(mesh);
+          const plain = mesh.material;
+          const wave = Array.isArray(plain)
+            ? plain.map((m) => revealTwin(m, uniforms[i]))
+            : revealTwin(plain, uniforms[i]);
+          dressed.current.push({ mesh, plain, wave });
+          // догрузившийся меш сразу в том же наряде, что и соседи
+          if (worn.current) mesh.material = wave;
+          fresh++;
         });
       };
       ORDER.forEach((name, i) => patch(groups[name], i));
@@ -96,15 +170,23 @@ export default function RevealWave({
       patch(shadow?.current, 0);
     }
 
-    // готовность: колпачки приехали, новых материалов нет, и с последней
-    // правки прошло несколько кадров - их хватает драйверу на сборку
-    // программ. кадры заказываем сами, канвас рисует по требованию
+    // готовность: колпачки приехали, новых мешей нет, и с последнего
+    // прошло несколько кадров - их хватает драйверу на сборку программ.
+    // кадры заказываем сами, канвас рисует по требованию.
+    //
+    // без фоновой сборки наряды под заставкой чередуются: иначе программа
+    // обычного материала слинкуется уже на живой странице, в момент первой
+    // смены, и встанет весь поток
     if (!compiled.current) {
       const capsIn = (groups.keycaps?.children.length ?? 0) > 0;
       quiet.current = fresh || !capsIn ? 0 : quiet.current + 1;
+      wear(parallel || quiet.current % 2 === 1);
       invalidate();
       if (quiet.current >= 4) {
         compiled.current = true;
+        if (parallel) compilePlain();
+        else plainReady.current = true;
+        wear(true);
         onCompiled?.();
       }
       return;
@@ -124,21 +206,30 @@ export default function RevealWave({
         invalidate();
         return;
       }
-      // прошла - снимаем проверку, чтобы не стоила кадров
+      // прошла, но обычные материалы ещё собираются - остаёмся в двойниках
+      // с раскрытым фронтом и ждём. кадр закажет сама сборка, когда кончится
+      if (!plainReady.current) {
+        sweep(1);
+        return;
+      }
+      // снимаем двойников, чтобы не стоили кадров
       for (const u of uniforms) u.uRevealOn.value = 0;
+      wear(false);
       done.current = true;
       invalidate();
       return;
     }
 
-    // проверку включаем обратно только на своём отрезке и гасим, едва
+    // двойников надеваем обратно только на своём отрезке и снимаем, едва
     // он кончился
     const t = scroll.current.reveal;
     if (t >= 0) {
+      if (!scrolled.current) wear(true);
       scrolled.current = true;
       sweep(t);
     } else if (scrolled.current) {
       scrolled.current = false;
+      wear(false);
       for (const u of uniforms) {
         u.uRevealOn.value = 0;
         u.uRevealR.value = REVEAL_MAX;

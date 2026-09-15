@@ -182,7 +182,7 @@ export default function Lab() {
           // без постобработки, но с окружением: у металла с metalness=1 весь
           // цвет берётся из отражений, и на голых источниках он чёрный
           <>
-            <Environment files="/hdri/studio.hdr" resolution={512} />
+            <Environment files={`${import.meta.env.BASE_URL}hdri/studio.hdr`} resolution={512} />
             <ambientLight intensity={0.35} />
             <directionalLight position={[6, 8, 5]} intensity={1.1} />
             <directionalLight position={[-6, 4, -5]} intensity={0.4} />

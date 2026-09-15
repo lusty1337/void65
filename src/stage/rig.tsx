@@ -1,10 +1,11 @@
 import { Environment } from '@react-three/drei';
 import { EffectComposer, Bloom, ToneMapping, SMAA } from '@react-three/postprocessing';
-import { ToneMappingMode } from 'postprocessing';
+import { ToneMappingMode, type EffectComposer as Composer } from 'postprocessing';
+import { useThree } from '@react-three/fiber';
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three-stdlib';
-import { ENV_RES, FILL_LIGHTS, MSAA, SHADOW_SIZE } from './quality';
+import { ENV_RES, FILL_LIGHTS, MSAA, SHADOW_SIZE, SMAA_PASS } from './quality';
 
 // схема предметной съёмки, а не три лампы вокруг объекта. вся разница
 // в том, откуда берётся основная часть освещённости: у ламп она лепит одну
@@ -21,6 +22,16 @@ const AIM = new THREE.Vector3(0, 0.8, 0);
 export function StageRig({ floorRef }: { floorRef?: MutableRefObject<THREE.Mesh | null> }) {
   const fill = useRef<THREE.RectAreaLight>(null);
   const wrap = useRef<THREE.RectAreaLight>(null);
+  const composer = useRef<Composer>(null);
+  const size = useThree((s) => s.size);
+  const dpr = useThree((s) => s.viewport.dpr);
+
+  // композер сам подгоняет буферы только под размер окна. после спуска
+  // плотности (resolution.tsx) они остались бы прежними, сцена рисовала бы
+  // в полном разрешении, и спуск ничего бы не дал
+  useEffect(() => {
+    composer.current?.setSize(size.width, size.height);
+  }, [dpr, size]);
 
   // без инициализации таблиц rectAreaLight светит неправильно
   useEffect(() => {
@@ -39,7 +50,11 @@ export function StageRig({ floorRef }: { floorRef?: MutableRefObject<THREE.Mesh 
       {/* основа освещённости, а не добавка. на четверти разрешения
           отражения в анодированном алюминии размазывались в ровное серое
           поле, и металл переставал быть металлом */}
-      <Environment files="/hdri/studio.hdr" resolution={ENV_RES} environmentIntensity={0.45} />
+      <Environment
+        files={`${import.meta.env.BASE_URL}hdri/studio.hdr`}
+        resolution={ENV_RES}
+        environmentIntensity={0.45}
+      />
 
       {/* ключевой: единственный с картой теней и единственный, кто лепит
           объём. его работа - направление и тень, а не вся освещённость */}
@@ -126,15 +141,16 @@ export function StageRig({ floorRef }: { floorRef?: MutableRefObject<THREE.Mesh 
           а не по геометрии, и при повороте объекта тёмные полосы ползут
           по корпусу в обратную сторону. SMAA вместо FXAA - он берёт края
           по образцам, а не угадывает по картинке, и тонкие кромки корпуса
-          перестают дрожать на движении */}
-      <EffectComposer multisampling={MSAA}>
+          перестают дрожать на движении. на лёгком уровне его нет,
+          см. quality.ts */}
+      <EffectComposer ref={composer} multisampling={MSAA}>
         {/* порог низкий намеренно: на высоком в блум попадало только
             светящееся, и блики на скруглениях оставались сухими точками.
             теперь расплывается и верхний край колпачка - то, из-за чего
             снимок читается снятым, а не посчитанным */}
         <Bloom mipmapBlur intensity={0.42} luminanceThreshold={0.9} luminanceSmoothing={0.3} />
         <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-        <SMAA />
+        {SMAA_PASS ? <SMAA /> : <></>}
       </EffectComposer>
     </>
   );

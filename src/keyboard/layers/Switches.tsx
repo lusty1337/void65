@@ -5,6 +5,7 @@ import { KEYS } from '../layout';
 import { THICKNESS } from '../stack';
 import { SWITCH_FOLLOW, type KeyLift } from '../keyLift';
 import { shared } from '../shared';
+import { REAL_GLASS, SWITCH_SPRINGS } from '../../stage/quality';
 import {
   buildSwitchBottom,
   buildSwitchTop,
@@ -132,9 +133,11 @@ export default function Switches({
         <meshStandardMaterial color="#b9a06a" metalness={1} roughness={0.4} envMapIntensity={0.5} />
       </instancedMesh>
 
-      <instancedMesh ref={refs.spring} args={[geo.spring, undefined, N]}>
-        <meshStandardMaterial color="#9aa0a8" metalness={1} roughness={0.42} envMapIntensity={0.6} />
-      </instancedMesh>
+      {SWITCH_SPRINGS && (
+        <instancedMesh ref={refs.spring} args={[geo.spring, undefined, N]}>
+          <meshStandardMaterial color="#9aa0a8" metalness={1} roughness={0.42} envMapIntensity={0.6} />
+        </instancedMesh>
+      )}
 
       <instancedMesh ref={refs.stem} args={[geo.stem, undefined, N]} castShadow>
         <meshStandardMaterial color={stemColor} roughness={0.62} metalness={0} envMapIntensity={0.1} />
@@ -142,19 +145,46 @@ export default function Switches({
 
       {/* колпак последним: transmission рисуется отдельным проходом, и
           в буфер преломления должно попасть всё остальное. этот проход
-          на всю клавиатуру - самый дорогой материал в сцене */}
+          на всю клавиатуру - самый дорогой материал в сцене.
+
+          на лёгком уровне стекло подделано, см. quality.ts. от стенки
+          остаётся блик и лёгкая дымка поверх того, что за ней: на чисто
+          чёрном колпак выходил темнее настоящего, дымку подбирали по снимкам
+          разборки. смешивание своё: обычное гасило бы прозрачностью и сам
+          блик, а у стекла он в полную силу */}
       <instancedMesh ref={refs.top} args={[geo.top, undefined, N]}>
-        <meshPhysicalMaterial
-          color="#f6f9fc"
-          transmission={0.99}
-          ior={1.585}
-          thickness={SW.wall * MM * 1.2}
-          roughness={0.045}
-          envMapIntensity={1.4}
-          clearcoat={0.6}
-          clearcoatRoughness={0.04}
-          side={THREE.DoubleSide}
-        />
+        {REAL_GLASS ? (
+          <meshPhysicalMaterial
+            color="#f6f9fc"
+            transmission={0.99}
+            ior={1.585}
+            thickness={SW.wall * MM * 1.2}
+            roughness={0.045}
+            envMapIntensity={1.4}
+            clearcoat={0.6}
+            clearcoatRoughness={0.04}
+            side={THREE.DoubleSide}
+          />
+        ) : (
+          <meshPhysicalMaterial
+            color="#20242a"
+            ior={1.585}
+            roughness={0.045}
+            envMapIntensity={1.4}
+            clearcoat={0.6}
+            clearcoatRoughness={0.04}
+            side={THREE.DoubleSide}
+            transparent
+            opacity={0.18}
+            depthWrite={false}
+            blending={THREE.CustomBlending}
+            blendSrc={THREE.OneFactor}
+            blendDst={THREE.OneMinusSrcAlphaFactor}
+            // обе стороны за один вызов: при таком смешивании порядок
+            // граней на картинке не сказывается
+            forceSinglePass
+          />
+        )}
       </instancedMesh>
     </group>
   );
