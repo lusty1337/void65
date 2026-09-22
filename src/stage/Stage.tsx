@@ -8,7 +8,7 @@ import RevealWave from './reveal';
 import WireGhost from './ghost';
 import { AdaptiveResolution } from './resolution';
 import { MAX_DPR, SHADOW_EVERY, SHADOW_KIND, WIREFRAME_INTRO } from './quality';
-import { PremiumKeyboard } from '../keyboard/PremiumKeyboard';
+import { BUILD_ORDER, PremiumKeyboard } from '../keyboard/PremiumKeyboard';
 import { BASE_Y } from '../keyboard/stack';
 import { createKeyLift, fillImpact, fillWave, KEY_RADIUS, STAB_RADIUS } from '../keyboard/keyLift';
 import { STAB_KEYS } from '../keyboard/layout';
@@ -37,6 +37,8 @@ const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
 
 /** куда падает сорвавшийся колпачок - от него же расходится волна удара */
 const LANDING = { x: SEAT.x, z: SEAT.z };
+/** середина платы: отсюда расходится волна при смене свитча */
+const MIDDLE = { x: 0, z: 0 };
 
 // сколько живёт волна от удара. к прокрутке не привязана намеренно:
 // колпачок ударился - волна доиграла до конца, даже если зритель
@@ -63,22 +65,29 @@ function Rig({
   progress,
   maxScroll,
   switchType,
+  ping,
   revealStart,
   floor,
+  onProgress,
   onCompiled,
 }: {
   progress: MutableRefObject<number>;
   /** прокручиваемая высота документа; её меряет страница, а не сцена */
   maxScroll: MutableRefObject<number>;
   switchType: SwitchType;
+  /** счётчик выбора свитча: вырос - пускаем по клавиатуре волну света */
+  ping: MutableRefObject<number>;
   revealStart: MutableRefObject<number | null>;
   /** пол, ловящий тень: волна проявления прошивает и его */
   floor: MutableRefObject<THREE.Mesh | null>;
+  /** ход подготовки сцены - им живёт полоса на заставке */
+  onProgress: (value: number) => void;
   onCompiled: () => void;
 }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const invalidate = useThree((s) => s.invalidate);
   const gl = useThree((s) => s.gl);
+  const size = useThree((s) => s.size);
   const layers = useRef<KeyboardLayers>(null);
   const tilt = useRef<THREE.Group>(null);
   const flight = useRef<THREE.Group>(null);
@@ -88,6 +97,10 @@ function Rig({
   const smooth = useRef(-1);
   /** момент удара по performance.now(); null - волна не идёт */
   const struck = useRef<number | null>(null);
+  /** откуда она расходится: место падения колпачка или середина платы */
+  const strike = useRef(LANDING);
+  /** на каком выборе свитча мы стояли на прошлом кадре */
+  const pinged = useRef(0);
   /** пока волна идёт, пружину наведения не трогаем: буфер занят ударом */
   const held = useRef(false);
   /** какое гнездо сейчас пустует: слой колпачков читает это число сам */
@@ -100,6 +113,11 @@ function Rig({
   const pose = useMemo(() => new Float64Array(POSE_SIZE).fill(NaN), []);
   /** на какой ход уже расписан буфер разлёта каждого слоя */
   const spreadAt = useRef<Partial<Record<LayerName, number>>>({});
+  // слои приходят по одному на кадр, снизу вверх. вся геометрия разом -
+  // это секунды занятого главного потока: заставка застывает картинкой,
+  // а её полоса не может сдвинуться, потому что браузеру нечем рисовать.
+  // по слою за кадр - и поток дышит, и ход подготовки виден настоящий
+  const [built, setBuilt] = useState(1);
 
   // карту теней рисуем сами и только когда сдвинулось то, что её
   // отбрасывает: свет и пол стоят в мире, и на кадрах, где едет одна
@@ -129,6 +147,11 @@ function Rig({
   (window as unknown as Record<string, unknown>).__heroLift = lift;
 
   useFrame((_, dt) => {
+    if (built < BUILD_ORDER.length) {
+      setBuilt(built + 1);
+      invalidate();
+    }
+
     // прокрутку читаем здесь, на кадре, а не в обработчике scroll: событие
     // и кадр браузера идут вразнобой, за один кадр событий может не прийти
     // ни одного, а может прийти два. камера на значении из обработчика
@@ -151,9 +174,26 @@ function Rig({
     // ловим именно пересечение отметки, а не попадание в окрестность:
     // на обратном ходу удар обязан отыграться так же, а окрестность
     // на быстрой прокрутке проскакивается
-    if (before < P_LAND !== p < P_LAND) struck.current = performance.now();
+    if (before < P_LAND !== p < P_LAND) {
+      struck.current = performance.now();
+      strike.current = LANDING;
+    }
 
-    shotAt(p, camera.fov, camera.aspect, shot);
+    // сменили свитч - по плате расходится та же волна, но из середины
+    // и уже новым цветом. это единственное, чем выбор виден: на собранной
+    // клавиатуре самих свитчей не видно
+    if (ping.current !== pinged.current) {
+      pinged.current = ping.current;
+      struck.current = performance.now();
+      strike.current = MIDDLE;
+    }
+
+    // телефон набок: по одной пропорции его не отличить от сверхширокого
+    // монитора, поэтому условие то же, что у media-правила в page.css -
+    // узко, низко и шире, чем выше. иначе кадр разъехался бы с вёрсткой
+    // на узком по высоте окне десктопа
+    const short = size.width <= 900 && size.height <= 540 && size.width > size.height;
+    shotAt(p, camera.fov, camera.aspect, shot, short);
     heroActive.current = isHero(p);
     loose.current = shot.keyLoose > 0.5 ? DROP_INDEX : -1;
 
@@ -177,10 +217,10 @@ function Rig({
       const age = (performance.now() - struck.current) / (IMPACT_SEC * 1000);
       held.current = true;
       if (age < 1) {
-        fillImpact(lift, LANDING, age);
+        fillImpact(lift, strike.current, age);
         invalidate();
       } else {
-        fillImpact(lift, LANDING, 0);
+        fillImpact(lift, strike.current, 0);
         struck.current = null;
         held.current = false;
         invalidate();
@@ -266,6 +306,7 @@ function Rig({
           <Suspense fallback={null}>
             <PremiumKeyboard
               ref={layers}
+              built={built}
               switchType={switchType}
               defaultLights={false}
               lift={lift}
@@ -287,6 +328,7 @@ function Rig({
         shadow={floor}
         start={revealStart}
         scroll={shotRef}
+        onProgress={onProgress}
         onCompiled={() => {
           onCompiled();
           invalidate();
@@ -301,7 +343,9 @@ function Stage({
   maxScroll,
   redraw,
   switchType,
+  ping,
   revealStart,
+  onProgress,
   onCompiled,
 }: {
   /** доля прокрутки 0→1; реф, а не проп - он меняется каждый кадр */
@@ -311,7 +355,11 @@ function Stage({
   /** сюда канвас кладёт свой "перерисуй" */
   redraw: MutableRefObject<(() => void) | null>;
   switchType: SwitchType;
+  /** счётчик выбора свитча со страницы */
+  ping: MutableRefObject<number>;
   revealStart: MutableRefObject<number | null>;
+  /** ход подготовки сцены для полосы на заставке */
+  onProgress: (value: number) => void;
   onCompiled: () => void;
 }) {
   const floor = useRef<THREE.Mesh | null>(null);
@@ -323,7 +371,16 @@ function Stage({
   return (
     <div className="v-stage" aria-hidden="true">
       <Canvas
-        camera={{ position: [0.9, 4.6, 13.2], fov: 26 }}
+        // длинный объектив вместо широкого: на 26 градусах ряды клавиш
+        // разъезжались к краям кадра, и предмет читался нарисованным,
+        // а не снятым. дистанцию раскадровка считает от угла (fitDistance),
+        // поэтому кадр остаётся прежним - камера просто отходит дальше,
+        // а перспектива сжимается почти до параллельной.
+        //
+        // near подняли вместе с дистанцией: камера теперь стоит в двух-трёх
+        // десятках юнитов, и на 0.1 точности буфера глубины не хватало бы
+        // тонким листам стопки - они начали бы проступать друг сквозь друга
+        camera={{ position: [0.9, 4.6, 13.2], fov: 14, near: 2, far: 200 }}
         // сглаживание делает композер в собственном буфере. у холста оно
         // лишнее: многовыборочный буфер во весь экран, в который приходит
         // только готовая картинка композера, где рёбер уже нет
@@ -343,8 +400,10 @@ function Stage({
           progress={progress}
           maxScroll={maxScroll}
           switchType={switchType}
+          ping={ping}
           revealStart={revealStart}
           floor={floor}
+          onProgress={onProgress}
           onCompiled={onCompiled}
         />
       </Canvas>

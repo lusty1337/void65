@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, type MutableRefObject, type RefObject } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { BOARD_WIDTH, BOARD_DEPTH } from '../keyboard/layout';
+import { BOARD_WIDTH, BOARD_DEPTH, KEYS } from '../keyboard/layout';
 import { TRAY_WIDTH, TRAY_DEPTH } from '../keyboard/caseGeometry';
 import { BASE_Y, THICKNESS } from '../keyboard/stack';
-import { aimKeyLift, stepKeyLift, type KeyLift } from '../keyboard/keyLift';
+import { aimKeyLift, releaseAll, setPress, stepKeyLift, type KeyLift } from '../keyboard/keyLift';
+import { keyOfCode } from '../keyboard/keyCodes';
 
 // пятно кладём под самую подошву колпачка, а не на пластину: та на пять
 // миллиметров ниже, и с пологого ракурса первого экрана свет читался ниткой
@@ -14,6 +15,12 @@ const GLOW_Y = BASE_Y.keycaps - THICKNESS.keycaps / 2 - 0.03;
 
 /** предельный доворот за курсором - пара градусов, больше уже кривляние */
 const TILT = (2.4 * Math.PI) / 180;
+
+// сколько клавиши держатся поднятыми после касания. жеста "провести
+// по клавишам" на телефоне нет: палец, ведомый по экрану, - это прокрутка,
+// и страница уезжает раньше, чем зритель успевает что-то заметить. поэтому
+// там работает касание, а поднятые клавиши стоят своё время сами
+const TOUCH_HOLD = 620;
 
 // пружину шагает только этот компонент, слои лишь сверяют счётчик:
 // колпачки и свитчи читают один буфер, и если каждый шагнёт его сам,
@@ -38,11 +45,50 @@ export function KeyLiftDriver({
   const mesh = useRef<THREE.Mesh>(null);
   const local = useMemo(() => new THREE.Vector3(), []);
 
+  /** до какого момента держать поднятыми клавиши под касанием */
+  const hold = useRef(0);
+
   useFrame((_, dt) => {
     if (held.current) return;
-    if (!active.current && lift.point) aimKeyLift(lift, null);
+    if (!active.current) {
+      if (lift.point) aimKeyLift(lift, null);
+      // клавиатура уехала с первого экрана с зажатой клавишей: отпускать
+      // её некому, keyup придёт неизвестно когда
+      if (lift.pressAt >= 0) releaseAll(lift);
+    }
+    if (hold.current && performance.now() > hold.current) {
+      hold.current = 0;
+      aimKeyLift(lift, null);
+    }
     if (stepKeyLift(lift, dt)) invalidate();
   });
+
+  // настоящая клавиатура под руками зрителя: та же клавиша проваливается
+  // в модели. код приходит от ЖЕЛЕЗА, а не от раскладки, поэтому русская
+  // раскладка попадает в ту же клавишу. ничего не отменяем - пробел
+  // и стрелки обязаны и дальше прокручивать страницу
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.repeat || !active.current || held.current) return;
+      if (setPress(lift, keyOfCode(e.code), true)) invalidate();
+    };
+    const up = (e: KeyboardEvent) => {
+      if (setPress(lift, keyOfCode(e.code), false)) invalidate();
+    };
+    // окно потеряло фокус - keyup не придёт вовсе, и клавиша осталась бы
+    // утопленной до следующего нажатия
+    const off = () => {
+      if (releaseAll(lift)) invalidate();
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', off);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', off);
+    };
+  }, [lift, active, held, invalidate]);
 
   // то же пальцем. через события R3F нельзя: канвасу для них нужен
   // pointer-events, а с ним он забирает жест, и страница перестаёт
@@ -74,11 +120,14 @@ export function KeyLiftDriver({
       if (!ray.ray.intersectPlane(plane, hit)) return;
       parent.worldToLocal(hit);
       aimKeyLift(lift, { x: hit.x, z: hit.z });
+      hold.current = performance.now() + TOUCH_HOLD;
       invalidate();
     };
+    // палец убран - клавиши не падают следом: касание короче самой пружины
+    // подъёма, и на мгновенном возврате от него оставалась одна дрожь
     const drop = () => {
-      if (held.current) return;
-      aimKeyLift(lift, null);
+      if (held.current || !lift.point) return;
+      hold.current = performance.now() + TOUCH_HOLD;
       invalidate();
     };
 
@@ -172,8 +221,11 @@ export function SwitchGlow({ lift, color }: { lift: KeyLift; color: string }) {
     const l = light.current;
     const s = spot.current;
     if (!l || !s) return;
-    const p = lift.point;
-    const k = p ? lift.peak : 0;
+    // нажатая клавиша забирает свет себе: это прицельный удар, а наведение
+    // рядом - лишь присутствие руки
+    const hit = lift.pressAt >= 0 ? KEYS[lift.pressAt] : null;
+    const p = hit ?? lift.point;
+    const k = hit ? Math.max(lift.pressK, lift.peak) : p ? lift.peak : 0;
     // источник никогда не гасим через visible: три пересобирает программы
     // всех материалов, когда меняется набор источников света, - секунды
     // линковки ровно в момент первого наведения. на яркость шейдер
@@ -196,8 +248,9 @@ export function SwitchGlow({ lift, color }: { lift: KeyLift; color: string }) {
     s.position.set(p.x, GLOW_Y, p.z);
     // растёт вместе с волной: на слабом наведении точка под пальцем,
     // на полном лужа с ладонь. множитель приходит из буфера - у волны
-    // от удара пятно расходится на всю плату
-    const r = (0.7 + k * 0.3) * lift.glowR;
+    // от удара пятно расходится на всю плату. под нажатой клавишей оно
+    // вдвое туже: свет обязан остаться в её щели, а не заливать соседей
+    const r = (hit ? 0.42 : 0.7 + k * 0.3) * lift.glowR;
     s.scale.set(r, r, r);
     // источник тянется за пятном: иначе на разошедшейся волне он светит
     // в одну точку посреди поднявшегося кольца

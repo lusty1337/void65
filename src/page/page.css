@@ -253,6 +253,48 @@
    заказа прямо над списком */
 .v-spec dd { margin: 0; font-family: var(--data); font-size: 12px; color: var(--bone); }
 
+/* выбор свитча: три бренд-свитча сборки, у каждого свой цвет штока
+   и подсветки - тот же, что загорается в сцене. точка слева красится им,
+   и это единственное место на сайте, где цвет не шалфейный.
+   стоит на первом экране, под приглашением, а не в блоке заказа */
+.v-hero__pick { margin-top: clamp(14px, 2.4vh, 30px); }
+/* ширина не от колонок, а от содержимого: на узком мониторе четыре
+   колонки из двенадцати - это двести пикселей, и имена свитчей ломаются
+   пополам. нижняя граница держит их в строку, верхняя не даёт выбору
+   растянуться на весь текстовый столбец */
+.v-hero__pickBox { grid-column: 1 / span 5; min-width: min(100%, 310px); max-width: 380px; }
+.v-hero__pickLabel { margin-bottom: 10px; }
+.v-pick {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  /* щели между ячейками - это просвет подложки, а не рамки: рамка
+     у соседей удваивалась бы в двухпиксельную линию */
+  background: var(--line); border: 1px solid var(--line); border-radius: 2px;
+}
+.v-pick__opt {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
+  padding: 11px 12px 12px; background: var(--ground); border: 0; cursor: pointer;
+  text-align: left; color: inherit;
+  transition: background 0.2s ease;
+}
+.v-pick__opt:hover { background: var(--ground-2); }
+.v-pick__opt.is-on { background: var(--ground-2); }
+.v-pick__dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--tint); opacity: 0.4;
+  transition: opacity 0.25s ease, box-shadow 0.25s ease;
+}
+/* выбранная точка светится тем же, чем светится плата под клавишами */
+.v-pick__opt.is-on .v-pick__dot { opacity: 1; box-shadow: 0 0 10px var(--tint); }
+.v-pick__name {
+  font-family: var(--data); font-size: 10px; color: var(--bone-3);
+  white-space: nowrap;
+  transition: color 0.25s ease;
+}
+.v-pick__opt.is-on .v-pick__name { color: var(--bone); }
+.v-pick__kind {
+  font-family: var(--data); font-size: 9px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--bone-3); opacity: 0.75;
+}
+
 /* заказ */
 .v-order {
   position: relative;
@@ -347,14 +389,22 @@
   letter-spacing: 0.4em; text-indent: 0.4em; color: var(--bone-2);
 }
 .v-boot__bar { width: 100%; height: 1px; background: var(--line-2); overflow: hidden; }
+/* ход задаётся из разметки: полоса идёт по настоящим шагам подготовки
+   сцены, а шаги приходят редко и неравномерно - переход между ними и есть
+   всё её движение */
 .v-boot__bar i {
   display: block; height: 100%; background: var(--sage);
   transform: scaleX(0); transform-origin: left;
-  animation: v-bar 2.2s cubic-bezier(0.2, 0.6, 0.2, 1) 0.2s forwards;
+  transition: transform 0.5s cubic-bezier(0.33, 0, 0.2, 1);
 }
-.v-boot.is-ready .v-boot__bar i { animation: v-bar-end 0.3s ease forwards; }
-@keyframes v-bar { to { transform: scaleX(0.82); } }
-@keyframes v-bar-end { from { transform: scaleX(0.82); } to { transform: scaleX(1); } }
+/* строка под полосой: слева что делается прямо сейчас, справа доля.
+   табличные цифры - иначе проценты дёргают строку на каждой единице */
+.v-boot__row {
+  width: 100%; display: flex; justify-content: space-between; gap: 12px;
+  font-family: var(--data); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--bone-3);
+  font-variant-numeric: tabular-nums;
+}
 
 /* появление блоков */
 .v-rise { opacity: 0; transform: translateY(14px); }
@@ -370,7 +420,8 @@
 @media (max-width: 900px) {
   .v { --col: 6; --gap: 14px; }
   .v-mark, .v-hero__edition { grid-column: span 6; text-align: left; }
-  .v-hero__lead, .v-hero__specs { grid-column: 1 / -1; justify-content: flex-start; }
+  .v-hero__lead, .v-hero__specs, .v-hero__pickBox { grid-column: 1 / -1; }
+  .v-hero__specs { justify-content: flex-start; }
   .v-hero__specs { margin-top: 14px; }
   .v-build__list, .v-order__price, .v-order__actions { grid-column: 1 / -1; }
   .v-build__sticky { align-items: flex-end; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
@@ -396,11 +447,72 @@
   .v-order__note { margin-top: 16px; }
 }
 
+/* телефон набок. ширины тут хватает на две колонки, а высоты меньше,
+   чем у любого ноутбука, и правило выше - оно писано под вертикальный
+   телефон - складывало текст в одну колонку во всю ширину. кадр сцены
+   при этом широкий, клавиатура уведена вбок, и текст ложился прямо на неё.
+   возвращаем две колонки, а размеры считаем от ВЫСОТЫ: на 9vw заголовок
+   занимает весь экран целиком */
+@media (max-width: 900px) and (max-height: 540px) and (orientation: landscape) {
+  .v { --col: 12; --gap: 16px; --edge: 12px; }
+  .v-display { font-size: min(9vw, 17vh); }
+  .v-lead { font-size: 13px; line-height: 1.45; }
+
+  .v-mark { grid-column: span 4; }
+  .v-hero__edition { grid-column: 8 / span 5; text-align: right; }
+  .v-hero__head { margin-top: 6px; }
+  .v-hero__eyebrow { margin-bottom: 6px; }
+  .v-hero__sub { margin-top: 10px; }
+  .v-hero__lead { grid-column: 1 / span 5; }
+  /* колонка узкая, и строки характеристик ломались посередине слова -
+     разрешаем им стоять теснее, но не разрываться */
+  .v-hero__specs { grid-column: 8 / span 5; justify-content: flex-end; margin-top: 0; gap: 14px; }
+  .v-hero__specs span { white-space: nowrap; }
+
+  /* список слоёв снова сбоку от модели, и растушёвка опять горизонтальная */
+  .v-build__sticky { align-items: center; padding-bottom: 0; }
+  .v-build__list { grid-column: 7 / span 6; }
+  .v-build__list::before {
+    inset: -16px calc(var(--pad) * -1) -16px -120px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--ground) 76%, transparent) 26%,
+      color-mix(in oklab, var(--ground) 96%, transparent) 46%
+    );
+  }
+  .v-layer { padding: 6px 0; }
+  .v-layer__note p { font-size: 11px; }
+
+  .v-order__price { grid-column: 1 / span 6; }
+  .v-order__actions { grid-column: 8 / span 5; margin-top: 0; gap: 12px; }
+  /* табло растёт вместе с шириной колонки, а её тут много: без потолка
+     диски вылезают за верх экрана вместе с ценой */
+  .v-order__price .v65-flipdisk { width: min(100%, 260px); }
+  .v-order__eyebrow { margin-bottom: 10px; }
+  .v-order__note { margin-top: 10px; }
+  .v-btn { padding: 11px 20px; }
+  .v-spec { padding: 8px 0; }
+  /* высоты тут мало: подпись выбора уходит в одну строку с ним самим */
+  .v-hero__pick { margin-top: 10px; display: flex; align-items: center; gap: 12px; }
+  .v-hero__pickBox { display: contents; }
+  .v-hero__pickLabel { margin-bottom: 0; }
+  .v-pick { flex: 0 1 260px; }
+  .v-pick__opt { padding: 7px 6px 8px; gap: 4px; }
+  .v-pick__name { font-size: 9px; }
+  .v-pick__kind { font-size: 8px; letter-spacing: 0.1em; }
+  .v-foot { margin-top: 14px; padding-top: 10px; }
+}
+
 /* мелкий телефон: заголовок перестаёт помещаться в строку раньше всего */
 @media (max-width: 420px) {
   .v-display { font-size: clamp(46px, 15vw, 64px); }
   .v-hero__specs { gap: 14px; font-size: 10px; }
   .v-layer__spec { display: none; }
+  /* имена свитчей моноширинные, и втроём в ряд они первыми упираются
+     в ширину экрана */
+  .v-pick__opt { padding: 9px 7px 10px; gap: 5px; }
+  .v-pick__kind { font-size: 8px; letter-spacing: 0.1em; }
 }
 
 /* наведения на тач-устройстве нет, ловить сценой нечего. а вред есть:
@@ -413,5 +525,6 @@
 @media (prefers-reduced-motion: reduce) {
   .v-rise { opacity: 1; transform: none; }
   .v-hint::before { animation: none; }
-  .v-boot__inner, .v-boot__bar i { animation-duration: 0.01ms; }
+  .v-boot__inner { animation-duration: 0.01ms; }
+  .v-boot__bar i { transition-duration: 0.01ms; }
 }

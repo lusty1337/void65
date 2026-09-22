@@ -16,7 +16,12 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export { CAP_HEIGHT };
-const N = 48; // точек по периметру кольца
+// плотность сетки: N - точек по периметру кольца, остальное - кольца
+// на шляпке и на её изнанке. лёгкая уходит на телефон, где колпачок
+// шириной в два десятка пикселей, а колпачки - три пятых всей геометрии
+// сцены, и половина их треугольников там не видна
+export const FULL = { N: 48, capRings: 12, ceilRings: 4 };
+export const LIGHT = { N: 32, capRings: 8, ceilRings: 2 };
 // показатель суперэллипса: выше - прямоугольнее. на 6.2 шляпка скруглялась
 // почти в подушку, а у литого PBT кромки заметно резче
 const SE = 8.6;
@@ -59,7 +64,8 @@ function sePoint(t, a, b) {
 // высокий ряд ровно упирается в него, а домашний остаётся ниже
 const ROW_H_MAX = Math.max(...ROW_PROFILE.map((p) => p.h));
 
-export function buildCap(row, w) {
+export function buildCap(row, w, lod = FULL) {
+  const { N, capRings, ceilRings } = lod;
   const prof = ROW_PROFILE[row];
   const H = (CAP_HEIGHT / ROW_H_MAX) * prof.h;
   const halfW = w / 2;
@@ -114,7 +120,7 @@ export function buildCap(row, w) {
   // на четырёх кольцах изгиб блюдца ложился длинными узкими треугольниками,
   // и по шляпке от углов к центру шли отчётливые полосы - не тень и не блик,
   // а сама грань
-  const CAP_RINGS = 12;
+  const CAP_RINGS = capRings;
   let prev = rings[rings.length - 1];
   for (let k = 1; k <= CAP_RINGS; k++) {
     const rr = 1 - k / CAP_RINGS;
@@ -220,7 +226,7 @@ export function buildCap(row, w) {
   const ceilA = Math.max(0.04, halfW - ceilInset);
   const ceilB = Math.max(0.04, CORNER - ceilInset);
   const ceilY = (x, z) => dishAt(x, z) - TOP_THICK;
-  const CEIL_RINGS = 4;
+  const CEIL_RINGS = ceilRings;
   let prevIn = ringAt(ceilA, ceilB, ceilY);
   bridgeDown(innerSide[innerSide.length - 1], prevIn);
   for (let k = 1; k <= CEIL_RINGS; k++) {
@@ -428,14 +434,17 @@ function writeGlb(meshes, outPath) {
 
 // запуск только при прямом вызове: при импорте из теста ничего не пишем
 if (process.argv[1] && process.argv[1].endsWith('genKeycaps.mjs')) {
-  const meshes = uniqueCombos().map(({ key, row, w }) => ({
-    name: `cap_${key}`,
-    geo: buildCap(row, w),
-  }));
-  const outPath = join(__dirname, '..', 'public', 'keycaps.glb');
-  const size = writeGlb(meshes, outPath);
-  const tris = meshes.reduce((s, m) => s + m.geo.indices.length / 3, 0);
-  console.log(`keycaps.glb: ${meshes.length} мешей, ${tris} трис, ${size} байт`);
+  // оба файла за один заход: разъехавшиеся наборы имён мешей уронили бы
+  // сцену молча - слой колпачков ищет их по имени комбинации
+  for (const [file, lod] of [['keycaps.glb', FULL], ['keycaps-low.glb', LIGHT]]) {
+    const meshes = uniqueCombos().map(({ key, row, w }) => ({
+      name: `cap_${key}`,
+      geo: buildCap(row, w, lod),
+    }));
+    const outPath = join(__dirname, '..', 'public', file);
+    const size = writeGlb(meshes, outPath);
+    const tris = meshes.reduce((s, m) => s + m.geo.indices.length / 3, 0);
+    console.log(`${file}: ${meshes.length} мешей, ${tris} трис, ${size} байт`);
+  }
   console.log('ряды/наклоны:', ROW_TILT.length === ROWS.length ? 'ок' : 'РАСХОЖДЕНИЕ');
-  console.log('имена:', meshes.map((m) => m.name).join(', '));
 }

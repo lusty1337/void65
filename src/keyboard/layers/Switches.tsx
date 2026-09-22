@@ -73,7 +73,7 @@ export default function Switches({
   // в белое под студийным софтбоксом
   const stemColor = useMemo(() => new THREE.Color(tint).multiplyScalar(0.38), [tint]);
 
-  const write = useCallback((hop: Float32Array | null, fly: Float32Array | null) => {
+  const write = useCallback((hop: Float32Array | null, fly: Float32Array | null, dn: Float32Array | null) => {
     const m = new THREE.Matrix4();
     for (const [part, ref] of Object.entries(refs)) {
       const mesh = ref.current;
@@ -82,7 +82,13 @@ export default function Switches({
       KEYS.forEach((key, i) => {
         m.makeTranslation(
           key.x,
-          y + (hop ? hop[i] * SWITCH_FOLLOW : 0) + (fly ? fly[i] : 0),
+          // за подъёмом свитч идёт лишь чуть-чуть, а за нажатием шток идёт
+          // один к одному - он и есть то, что нажимают. корпус при этом
+          // стоит: в него шток и уходит
+          y +
+            (hop ? hop[i] * SWITCH_FOLLOW : 0) +
+            (fly ? fly[i] : 0) +
+            (dn && part === 'stem' ? dn[i] : 0),
           key.z,
         );
         mesh.setMatrixAt(i, m);
@@ -94,7 +100,7 @@ export default function Switches({
   }, []);
 
   useLayoutEffect(() => {
-    write(lift ? lift.y : null, spread ? spread.y : null);
+    write(lift ? lift.y : null, spread ? spread.y : null, lift ? lift.down : null);
   }, [write, lift, spread]);
 
   const seen = useRef(-1);
@@ -102,7 +108,7 @@ export default function Switches({
     const rev = (lift?.rev ?? 0) + (spread?.rev ?? 0);
     if ((!lift && !spread) || rev === seen.current) return;
     seen.current = rev;
-    write(lift ? lift.y : null, spread ? spread.y : null);
+    write(lift ? lift.y : null, spread ? spread.y : null, lift ? lift.down : null);
   });
 
   return (

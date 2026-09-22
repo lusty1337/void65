@@ -24,9 +24,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # сайт живёт в подпапке домена, egordev.com/void65/, и vite должен знать
-      # это заранее: иначе скрипты и модель запрашиваются от корня и отдают 404
-      - run: npm run build -- --base=/void65/
+      # сайт живёт в подпапке домена, egordev.com/<репозиторий>/, и vite должен
+      # знать это заранее: иначе скрипты и модель запрашиваются от корня
+      # и отдают 404. имя берём у самого репозитория, а не зашиваем строкой -
+      # тогда форк или превью-копия собираются под свой адрес сами
+      - run: npm run build -- --base=/${{ github.event.repository.name }}/
       - run: touch dist/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:

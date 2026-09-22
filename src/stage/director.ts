@@ -43,6 +43,12 @@ export type Shot = {
   roll: number;
   /** мировое положение сорвавшегося колпачка */
   keyPos: THREE.Vector3;
+  /**
+   * насколько колпачок остался один: 0 клавиатура ещё рядом, 1 она ушла.
+   * по нему разгорается его собственный источник света - в полную силу
+   * у самой платы тот выжигал гнездо и соседние клавиши в белое пятно
+   */
+  keyFree: number;
   /** его кувырок */
   keyRot: THREE.Euler;
   /** 0 - колпачок сидит в раскладке, 1 - живёт сам по себе */
@@ -165,6 +171,12 @@ const ARC_Z = 0.6;
 // как квадрат и в начале незаметен, а вращение шло равномерно
 const PEEL_SHARE = 0.09;
 
+// какая ДОЛЯ отделения уходит на выход из гнезда: всё это время колпачок
+// ещё принадлежит клавиатуре и едет вместе с ней. дальше он сам по себе,
+// и к этому моменту она успевает уйти настолько, что дотянуться до него
+// соседними клавишами уже не может
+const GRIP = 0.55;
+
 // на сколько колпачок выходит из гнезда. клавиатура в этот момент стоит
 // вертикально, поэтому "вверх из шахты" - это на зрителя. без выхода
 // заваливающаяся дальше клавиатура прошивала его соседними клавишами
@@ -183,6 +195,9 @@ const LAND_SHOT = { yaw: 24, elev: 18, margin: 1.1, w: 13, h: 4.2, d: 6.2, lookY
 // посреди пустого экрана
 /** кадр разборки: клавиатура занимает левую половину, справа список слоёв */
 const BUILD_WIDE = { yaw: 30, elev: 23, margin: 1.12, lookX: 4.1, rise: 0.03 };
+// он же на телефоне набок: список слоёв там занимает половину ширины,
+// и стопку приходится уводить дальше влево, чем на десктопе
+const BUILD_SHORT = { yaw: 30, elev: 23, margin: 1.2, lookX: 6.2, rise: 0.03 };
 /** он же в портрете: клавиатура во всю ширину и выше центра, текст под ней */
 const BUILD_TALL = { yaw: 26, elev: 26, margin: 1.03, lookX: 0, rise: -0.11 };
 /** общий план финала, на нём клавиатуру подбрасывает */
@@ -190,6 +205,9 @@ const HOME_WIDE = { yaw: 8, elev: 16, margin: 1.24, lookY: SWITCH_SPREAD + 0.7, 
 const HOME_TALL = { yaw: 8, elev: 16, margin: 1.03, lookY: SWITCH_SPREAD + 0.7, rise: -0.02 };
 /** кадр цены: вторая клавиатура стоит в ВЕРХНЕЙ половине, под ней счётчик */
 const PRICE_WIDE = { yaw: 5, elev: 18, margin: 1.34, lookY: 0.9, rise: -0.1 };
+// на телефоне набок под клавиатурой стоят и счётчик, и кнопка, и строки
+// характеристик: предмет уходит выше и мельче, иначе он ложится на них
+const PRICE_SHORT = { yaw: 5, elev: 18, margin: 1.62, lookY: 0.9, rise: -0.34 };
 // в портрете уводим заметно выше и до самого низа страницы. причина
 // не в композиции: снизу стоит панель браузера, видимая часть окна короче
 // документа, и на последних процентах цена подъезжала прямо под модель
@@ -290,31 +308,66 @@ function flyKey(p: number, out: Shot) {
   // выход из гнезда: короткий горб в начале пути, к двум долям отделения
   // сходит на нет
   const pop = POP_OUT * Math.sin(Math.PI * Math.min(1, t / (PEEL_SHARE * 2)));
-  out.keyPos.set(
-    lerp(BIRTH.x, SEAT.x, glide) + arc * ARC_X,
-    lerp(BIRTH.y, SEAT.y, g),
-    lerp(BIRTH.z, SEAT.z, glide) + arc * ARC_Z + pop,
-  );
+  // свободный полёт: от мировой точки отрыва к гнезду
+  let x = lerp(BIRTH.x, SEAT.x, glide) + arc * ARC_X;
+  let y = lerp(BIRTH.y, SEAT.y, g);
+  let z = lerp(BIRTH.z, SEAT.z, glide) + arc * ARC_Z + pop;
   // линейная добавка даёт ненулевую угловую скорость с первого мгновения:
   // колпачок, соскальзывая с наклонённой клавиатуры, обязан провернуться
   // сразу, а не лечь плашмя, как снятая с вешалки одежда. основную часть
   // ведёт сглаженная ступенька, и в сумме кувырок приходит в кратное 2π -
   // иначе колпачок воткнётся в свитч углом
   const turn = s(t) * 0.86 + t * 0.14;
-  out.keyRot.set(RELEASE_TILT + turn * SPIN_X, turn * Math.PI * 2, turn * Math.PI * -2);
+  let rx = RELEASE_TILT + turn * SPIN_X;
+  let ry = turn * Math.PI * 2;
+  let rz = turn * Math.PI * -2;
+
+  // отрыв не мгновенный. мировую точку отрыва берём один раз, а гнездо
+  // под колпачком живёт дальше: клавиатура продолжает заваливаться и идёт
+  // вверх. застывший в той точке колпачок остаётся у неё на пути, и она
+  // проходит сквозь него соседними клавишами - это и было видно на телефоне.
+  // поэтому первую долю пути он держится ЖИВОГО гнезда, выходит из шахты
+  // вдоль её оси, а не по мировой вертикали, и отпускает клавиатуру
+  // постепенно: она уходит вверх, он отстаёт и остаётся один
+  const free = s(clamp01(t / (PEEL_SHARE * GRIP)));
+  if (free < 1) {
+    const local = clamp01((p - START.hero) / SPAN.hero);
+    const tilt = heroTilt(local);
+    const sx = Math.sin(tilt);
+    const cx = Math.cos(tilt);
+    // та же точка, что у BIRTH, но на текущем наклоне и с выходом из шахты
+    const up = SEAT.y + pop;
+    x = lerp(SEAT.x, x, free);
+    y = lerp(up * cx - SEAT.z * sx + heroLift(local), y, free);
+    z = lerp(up * sx + SEAT.z * cx, z, free);
+    rx = lerp(tilt, rx, free);
+    ry = lerp(0, ry, free);
+    rz = lerp(0, rz, free);
+  }
+  out.keyPos.set(x, y, z);
+  out.keyRot.set(rx, ry, rz);
   out.keyLoose = p > P_RELEASE && p < P_LAND ? 1 : 0;
+  // одиночество считаем отдельно от отрыва и позже него: пока клавиатура
+  // рядом, её собственный свет колпачок и освещает, а вот его личный
+  // источник в это время бьёт в упор по соседним клавишам и по гнезду
+  out.keyFree = s(clamp01((t / PEEL_SHARE - GRIP) / (1 - GRIP)));
 }
 
-export function shotAt(p: number, fov: number, aspect: number, out: Shot): Shot {
+// насколько клавиатура уходит вправо на первом экране низкого широкого
+// окна: телефон набок. текст в такой раскладке стоит слева колонкой,
+// и по центру кадра ему не разойтись с моделью
+const SHORT_HERO_X = -5.2;
+
+export function shotAt(p: number, fov: number, aspect: number, out: Shot, short = false): Shot {
   const { id, local } = actAt(p);
 
   // ориентацию берём из пропорций кадра, а не из ширины окна: канвас
   // занимает всё окно, и композиция строится именно под его пропорции.
   // планшет набок ведёт себя как десктоп, и это верно
   const portrait = aspect < 1;
-  const BUILD_SHOT = portrait ? BUILD_TALL : BUILD_WIDE;
+  const BUILD_SHOT = portrait ? BUILD_TALL : short ? BUILD_SHORT : BUILD_WIDE;
   const HOME_SHOT = portrait ? HOME_TALL : HOME_WIDE;
-  const PRICE_SHOT = portrait ? PRICE_TALL : PRICE_WIDE;
+  const PRICE_SHOT = portrait ? PRICE_TALL : short ? PRICE_SHORT : PRICE_WIDE;
 
   flyKey(p, out);
 
@@ -358,8 +411,13 @@ export function shotAt(p: number, fov: number, aspect: number, out: Shot): Shot 
     // и опускать так же сильно нельзя: видимая высота узкого кадра втрое
     // больше, и та же доля увела бы предмет под нижний край
     const bMargin = portrait ? lerp(1.04, 1.02, tt) : lerp(1.3, 1.12, tt);
+    // на низком широком окне уводим предмет вбок, освобождая колонку тексту
+    const bLookX = short && !portrait ? SHORT_HERO_X : 0;
     const bLookY = boardY + lerp(0.7, 0.2, tt);
-    const bRise = portrait ? lerp(0.11, 0.03, tt) : lerp(0.17, 0.04, tt);
+    // на телефоне набок предмет опускаем ниже обычного: слева от него
+    // стоит не только текст, но и выбор свитча, и на общей высоте они
+    // сходятся в одной полосе кадра
+    const bRise = portrait ? lerp(0.11, 0.03, tt) : lerp(short ? 0.3 : 0.17, 0.04, tt);
 
     // дальше камера переходит на колпачок, ровно с момента срыва:
     // клавиатура в это время уходит вверх, и к стыку её в кадре уже нет
@@ -367,7 +425,10 @@ export function shotAt(p: number, fov: number, aspect: number, out: Shot): Shot 
     yaw = lerp(bYaw, 14, chase);
     elev = lerp(bElev, 6, chase);
     margin = lerp(bMargin, 1.04, chase);
-    lookX = lerp(0, out.keyPos.x, chase);
+    lookX = lerp(bLookX, out.keyPos.x, chase);
+    // сдвинутой цели объекту нужно вдвое больше места по ширине, иначе
+    // он вылезет за противоположный край
+    offCenter = Math.abs(bLookX) * (1 - chase);
     lookY = lerp(bLookY, out.keyPos.y, chase);
     lookZ = lerp(0, out.keyPos.z, chase);
     lookRise = lerp(bRise, 0, chase);
@@ -517,6 +578,7 @@ export function makeShot(): Shot {
     keyPos: new THREE.Vector3(),
     keyRot: new THREE.Euler(),
     keyLoose: 0,
+    keyFree: 0,
     reveal: -1,
   };
 }

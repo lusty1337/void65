@@ -50,6 +50,7 @@ export default function RevealWave({
   shadow,
   start,
   scroll,
+  onProgress,
   onCompiled,
 }: {
   layers: MutableRefObject<KeyboardLayers | null>;
@@ -63,6 +64,12 @@ export default function RevealWave({
    * страницы
    */
   scroll: MutableRefObject<{ reveal: number }>;
+  /**
+   * ход подготовки сцены, 0…1 - его показывает полоса на заставке. шагов
+   * ровно столько, сколько здесь настоящих событий: приехали колпачки,
+   * и дальше по одному на каждый тихий кадр сборки программ
+   */
+  onProgress?: (value: number) => void;
   /**
    * программы двойников собраны, вход можно начинать. сигнал обязателен:
    * первая отрисовка нового шейдера держит главный поток, и на старте волны
@@ -87,6 +94,8 @@ export default function RevealWave({
   const worn = useRef(false);
   /** программы обычных материалов собраны, двойников можно снимать */
   const plainReady = useRef(false);
+  /** что уже сказано наружу: иначе заставка перерисовывалась бы каждый кадр */
+  const told = useRef(-1);
 
   // с этим расширением драйвер линкует программы в своих потоках, и спросить
   // о готовности можно, не останавливая страницу
@@ -180,6 +189,17 @@ export default function RevealWave({
     if (!compiled.current) {
       const capsIn = (groups.keycaps?.children.length ?? 0) > 0;
       quiet.current = fresh || !capsIn ? 0 : quiet.current + 1;
+      // наружу отдаём ровно то, что знаем: сколько слоёв уже в сцене,
+      // а когда все семь собраны - сколько тихих кадров простояла сборка
+      // программ. ни одного числа от таймера
+      const inScene = ORDER.filter((name) => (groups[name]?.children.length ?? 0) > 0).length;
+      const step = capsIn
+        ? 0.5 + 0.5 * Math.min(1, quiet.current / 4)
+        : 0.5 * (inScene / ORDER.length);
+      if (step !== told.current) {
+        told.current = step;
+        onProgress?.(step);
+      }
       wear(parallel || quiet.current % 2 === 1);
       invalidate();
       if (quiet.current >= 4) {

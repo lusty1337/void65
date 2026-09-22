@@ -23,6 +23,18 @@ export type { KeyboardLayers, LayerName, LayerOffsets, SwitchType };
 export { SWITCH_TINT };
 export { default as SwitchModel } from './SwitchModel';
 
+// порядок сборки - снизу вверх, тот же, каким слои проступают на входе.
+// по нему же они и появляются в сцене: по одному на кадр
+export const BUILD_ORDER: LayerName[] = [
+  'bottomCase',
+  'pcb',
+  'foam',
+  'stabilizers',
+  'switches',
+  'plate',
+  'keycaps',
+];
+
 export type PremiumKeyboardProps = {
   layerOffsets?: LayerOffsets;
   switchType?: SwitchType;
@@ -40,6 +52,15 @@ export type PremiumKeyboardProps = {
   spread?: { keycaps?: KeyLift; switches?: KeyLift; stabilizers?: KeyLift };
   /** индекс колпачка, который сейчас летит сам по себе, или −1 */
   loose?: MutableRefObject<number>;
+  /**
+   * сколько слоёв уже построено. геометрия здесь процедурная, и вся разом
+   * она занимает главный поток на секунды: страница в это время не рисует
+   * ничего, заставка стоит мёртвой картинкой, а на телефоне браузер успевает
+   * решить, что вкладка зависла. поэтому слои приходят по одному на кадр -
+   * между ними браузер и дышит, и рисует настоящий ход подготовки.
+   * по умолчанию видно всё: компонент обязан читаться и сам по себе
+   */
+  built?: number;
 };
 
 export const PremiumKeyboard = forwardRef<KeyboardLayers, PremiumKeyboardProps>(
@@ -52,6 +73,7 @@ export const PremiumKeyboard = forwardRef<KeyboardLayers, PremiumKeyboardProps>(
       lift,
       spread,
       loose,
+      built = BUILD_ORDER.length,
     },
     ref,
   ) {
@@ -96,6 +118,9 @@ export const PremiumKeyboard = forwardRef<KeyboardLayers, PremiumKeyboardProps>(
     );
 
     const y = (name: LayerName) => BASE_Y[name] + (layerOffsets[name] ?? 0);
+    // сами группы стоят всегда: сцена держит на них ссылки и правит им
+    // положение прямо на кадре. по одному приходит их содержимое
+    const on = (name: LayerName) => BUILD_ORDER.indexOf(name) < built;
 
     return (
       <group>
@@ -110,38 +135,42 @@ export const PremiumKeyboard = forwardRef<KeyboardLayers, PremiumKeyboardProps>(
         {/* фрезерованная оболочка из колец: с вырезом под разъём и клином
             под наклон, как у настоящего корпуса */}
         <group ref={groups.bottomCase} position={[0, y('bottomCase'), 0]}>
-          <CaseShell />
+          {on('bottomCase') && <CaseShell />}
         </group>
 
         <group ref={groups.pcb} position={[0, y('pcb'), 0]}>
-          <Pcb />
+          {on('pcb') && <Pcb />}
         </group>
 
         <group ref={groups.foam} position={[0, y('foam'), 0]}>
-          <Foam />
+          {on('foam') && <Foam />}
         </group>
 
         <group ref={groups.stabilizers} position={[0, y('stabilizers'), 0]}>
-          <Stabilizers spread={spread?.stabilizers} />
+          {on('stabilizers') && <Stabilizers spread={spread?.stabilizers} />}
         </group>
 
         <group ref={groups.switches} position={[0, y('switches'), 0]}>
-          <Switches tint={SWITCH_TINT[switchType]} lift={lift} spread={spread?.switches} />
+          {on('switches') && (
+            <Switches tint={SWITCH_TINT[switchType]} lift={lift} spread={spread?.switches} />
+          )}
         </group>
 
         <group ref={groups.plate} position={[0, y('plate'), 0]}>
-          <Plate />
+          {on('plate') && <Plate />}
         </group>
 
         <group ref={groups.keycaps} position={[0, y('keycaps'), 0]}>
           {/* группа держится всегда, меш появляется после загрузки .glb */}
           <Suspense fallback={null}>
-            <Keycaps
-              accentColor={accentColor}
-              lift={lift}
-              spread={spread?.keycaps}
-              loose={loose}
-            />
+            {on('keycaps') && (
+              <Keycaps
+                accentColor={accentColor}
+                lift={lift}
+                spread={spread?.keycaps}
+                loose={loose}
+              />
+            )}
           </Suspense>
         </group>
       </group>

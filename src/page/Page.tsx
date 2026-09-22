@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useProgress } from '@react-three/drei';
 import Stage from '../stage/Stage';
 import { ACTS, SPAN, START } from '../stage/acts';
 import FlipDiskNumber from './ui/FlipDiskNumber';
-import { HERO, LAYERS, ORDER } from './copy';
+import { HERO, LAYERS, ORDER, SWITCHES } from './copy';
+import { SWITCH_TINT } from '../keyboard/materials';
+import type { SwitchType } from '../keyboard/types';
 import './page.css';
 
 // сцена лежит фоном и не принадлежит ни одной секции: текст скроллится
@@ -17,6 +20,24 @@ const height = (id: (typeof ACTS)[number]['id']) =>
 // сцена касания
 const COARSE =
   typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches ?? false);
+
+// из чего складывается полоса на заставке. считать нечего: это две
+// РАЗНЫЕ работы подряд, и доли между ними отмерены по замеру времени -
+// файлы приезжают заметно быстрее, чем собираются программы шейдеров.
+// ничего не идёт по таймеру: полоса стоит там, где стоит дело
+const BOOT_FILES = 0.3;
+
+// ход сцены до половины - это сборка слоёв, после - сборка программ:
+// столько же, сколько стоит сама подготовка, см. RevealWave
+const BOOT_LAYERS = 0.5;
+
+/** подпись под полосой - что именно сейчас происходит */
+function bootStage(boot: number, ready: boolean): string {
+  if (ready) return 'Ready';
+  if (boot < BOOT_FILES) return 'Loading model';
+  if (boot < BOOT_FILES + (1 - BOOT_FILES) * BOOT_LAYERS) return 'Building layers';
+  return 'Compiling shaders';
+}
 
 /** та же ступенька, по которой сцена ведёт разлёт слоёв */
 const smooth = (t: number) => {
@@ -33,6 +54,9 @@ export default function Page({ price = '349' }: { price?: string }) {
   const revealStart = useRef<number | null>(null);
 
   const [ready, setReady] = useState(false);
+  // ход сцены после загрузки файлов: сборка слоёв и программ. приходит
+  // из RevealWave - только он знает, что там на самом деле происходит
+  const [scene, setScene] = useState(0);
   const [entered, setEntered] = useState(false);
   // сколько слоёв снято - только для подсветки списка, сцена его не ждёт
   const [layerStep, setLayerStep] = useState(-1);
@@ -50,6 +74,30 @@ export default function Page({ price = '349' }: { price?: string }) {
   // цена проступает не сразу: сперва клавиатура обязана уйти за нижний
   // край, иначе счётчик и модель спорят за одно место в кадре
   const [priceUp, setPriceUp] = useState(false);
+
+  // сколько файлов приехало - настоящая доля от самого three, а не таймер.
+  // сюда попадают модель колпачков и студийная карта освещения
+  const { progress: loaded } = useProgress();
+  const files = Math.min(1, loaded / 100);
+  // только вперёд. три пересоздаёт отрисовщик на первых кадрах, и сцена
+  // на мгновение начинает считаться заново: сделанная работа от этого
+  // не исчезает, а полоса, сдающая назад, читается сломанной
+  const top = useRef(0);
+  top.current = Math.max(top.current, BOOT_FILES * files + (1 - BOOT_FILES) * scene);
+  const boot = ready ? 1 : top.current;
+  // выбранный свитч меняет цвет штоков и подсветки в сцене и половину
+  // строк характеристик
+  const [switchType, setSwitchType] = useState<SwitchType>('tactile');
+  // счётчик выбора: по нему сцена пускает по клавиатуре волну света нового
+  // цвета. реф, а не проп - сцене важно САМО событие, а не число
+  const ping = useRef(0);
+
+  const pickSwitch = (id: SwitchType) => {
+    if (id === switchType) return;
+    setSwitchType(id);
+    ping.current += 1;
+    redraw.current?.();
+  };
 
   useEffect(() => {
     const onScroll = () => {
@@ -119,16 +167,27 @@ export default function Page({ price = '349' }: { price?: string }) {
         progress={progress}
         maxScroll={maxScroll}
         redraw={redraw}
-        switchType="tactile"
+        switchType={switchType}
+        ping={ping}
         revealStart={revealStart}
+        onProgress={setScene}
         onCompiled={onCompiled}
       />
 
       <div className={`v-boot${ready ? ' is-ready' : ''}${entered ? ' is-done' : ''}`} aria-hidden="true">
         <div className="v-boot__inner">
           <div className="v-boot__mark">VOID / 65</div>
+          {/* полоса показывает настоящий ход, а не время: сперва загрузка
+              файлов, потом сборка сцены. дорисовать её до конца нечем -
+              она доходит до края ровно тогда, когда сцена готова */}
           <div className="v-boot__bar">
-            <i />
+            <i style={{ transform: `scaleX(${boot})` }} />
+          </div>
+          <div className="v-boot__row">
+            {/* подпись идёт от той же доли, что и полоса: иначе она
+                возвращалась бы к уже пройденному шагу */}
+            <span>{bootStage(boot, ready)}</span>
+            <span>{Math.round(boot * 100)}%</span>
           </div>
         </div>
       </div>
@@ -164,6 +223,36 @@ export default function Page({ price = '349' }: { price?: string }) {
                 {HERO.specs.map((s) => (
                   <span key={s}>{s}</span>
                 ))}
+              </div>
+            </div>
+
+            {/* выбор свитча стоит здесь, а не в блоке заказа: это
+                единственная ручка на всей странице, и за ней нельзя гонять
+                зрителя до самого низа и обратно. здесь же он и отвечает -
+                по плате проходит волна света выбранного цвета, а дальше
+                этим цветом горит свет из-под нажатой клавиши */}
+            <div className="v-grid v-hero__pick v-rise" style={{ '--i': 4 } as never}>
+              <div className="v-hero__pickBox">
+                <div className="v-tag v-tag--mute v-hero__pickLabel">{HERO.switchLabel}</div>
+                {/* кнопки-переключатели, а не radiogroup: роль радиогруппы
+                    обещает переход стрелками, а его здесь нет - три кнопки
+                    обходятся табуляцией, как и любые другие на странице */}
+                <div className="v-pick" role="group" aria-label={HERO.switchLabel}>
+                  {SWITCHES.map((sw) => (
+                    <button
+                      key={sw.id}
+                      type="button"
+                      aria-pressed={sw.id === switchType}
+                      className={`v-pick__opt${sw.id === switchType ? ' is-on' : ''}`}
+                      style={{ '--tint': SWITCH_TINT[sw.id] } as never}
+                      onClick={() => pickSwitch(sw.id)}
+                    >
+                      <i className="v-pick__dot" />
+                      <span className="v-pick__name">{sw.name}</span>
+                      <span className="v-pick__kind">{sw.kind}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -218,7 +307,7 @@ export default function Page({ price = '349' }: { price?: string }) {
                 {ORDER.cta}
               </button>
               <dl className="v-order__specs">
-                {ORDER.specs.map(([label, value]) => (
+                {ORDER.specs(SWITCHES.find((s) => s.id === switchType)!).map(([label, value]) => (
                   <div className="v-spec" key={label}>
                     <dt>{label}</dt>
                     <dd>{value}</dd>

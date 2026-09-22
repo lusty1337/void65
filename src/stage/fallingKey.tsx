@@ -6,7 +6,7 @@ import { KEYCAP_GAP } from '../keyboard/layout';
 import { CHARCOAL, CHARCOAL_ALPHA, SAGE_CAP } from '../keyboard/materials';
 import { makeLegendAtlas, legendStretch } from '../keyboard/keycapAtlas';
 import { paintLegend } from '../keyboard/legendPaint';
-import { LEGEND_AREA } from '../keyboard/layers/Keycaps';
+import { KEYCAPS_URL, LEGEND_AREA } from '../keyboard/layers/Keycaps';
 import { shared } from '../keyboard/shared';
 import { DROP_INDEX, DROP_KEY, SEAT, type Shot } from './director';
 
@@ -34,7 +34,7 @@ const LAMP_OFFSET = new THREE.Vector3(1.2, 1.6, 2.6);
 const LAMP_POWER = 18;
 
 export default function FallingKey({ shot }: { shot: MutableRefObject<Shot> }) {
-  const { nodes } = useGLTF(`${import.meta.env.BASE_URL}keycaps.glb`) as unknown as {
+  const { nodes } = useGLTF(KEYCAPS_URL) as unknown as {
     nodes: Record<string, THREE.Mesh>;
   };
   const group = useRef<THREE.Group>(null);
@@ -87,9 +87,12 @@ export default function FallingKey({ shot }: { shot: MutableRefObject<Shot> }) {
   useFrame(() => {
     const g = group.current;
     if (!g) return;
-    const { keyLoose, keyPos, keyRot } = shot.current;
+    const { keyLoose, keyFree, keyPos, keyRot } = shot.current;
 
-    if (lamp.current) lamp.current.intensity = keyLoose * LAMP_POWER;
+    // разгорается по мере отделения, а не разом в момент срыва: у самой
+    // платы источник в полную силу выжигал гнездо и соседние клавиши
+    // в белое пятно, а нужен он только там, где колпачок остался один
+    if (lamp.current) lamp.current.intensity = keyLoose * keyFree * LAMP_POWER;
 
     // не прячем через visible: невидимый объект не рисуется, а значит
     // и шейдер не собирается - программа линковалась при первом появлении

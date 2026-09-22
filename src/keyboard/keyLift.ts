@@ -8,6 +8,19 @@ export type KeyLift = {
   y: Float32Array;
   /** куда клавиша едет; между target и y стоит пружина */
   target: Float32Array;
+  /**
+   * нажатие - отдельная пара буферов, а не та же высота со знаком минус.
+   * за подъёмом свитч идёт лишь чуть-чуть (SWITCH_FOLLOW), а за нажатием
+   * шток обязан идти один к одному: иначе колпачок сядет на него сверху
+   * и крестовина вылезет сквозь шляпку
+   */
+  press: Float32Array;
+  /** текущая просадка; между press и down стоит своя, жёсткая пружина */
+  down: Float32Array;
+  /** какая клавиша светит под собой от нажатия, −1 - никакая */
+  pressAt: number;
+  /** насколько она сейчас утоплена, 0…1 - этим разгорается её подсветка */
+  pressK: number;
   /** растёт на каждом шаге со сдвигом: по нему слои решают, пересобирать
    *  ли матрицы */
   rev: number;
@@ -32,11 +45,45 @@ export const LIFT_RADIUS = 2.0;
 export const LIFT_HEIGHT = 0.34;
 /** свитч идёт следом, но заметно ниже - он лишь выглядывает из пластины */
 export const SWITCH_FOLLOW = 0.3;
+// ход нажатия - настоящие четыре миллиметра, как у MX. больше брать нельзя:
+// колпачок уйдёт ниже пластины, в которую он на самом деле упирается юбкой
+export const PRESS_DEPTH = 0.21;
+
+/**
+ * нажать или отпустить клавишу по её номеру в KEYS; true - что-то
+ * изменилось и кадр надо заказать
+ */
+export function setPress(lift: KeyLift, index: number, down: boolean): boolean {
+  if (index < 0 || index >= lift.press.length) return false;
+  const to = down ? -PRESS_DEPTH : 0;
+  if (lift.press[index] === to) return false;
+  lift.press[index] = to;
+  // свет берёт последнюю нажатую: при аккорде из трёх клавиш три пятна
+  // сливаются в лужу, а одно читается ударом
+  if (down) lift.pressAt = index;
+  return true;
+}
+
+/** отпустить всё разом - уход со страницы, конец первого экрана */
+export function releaseAll(lift: KeyLift): boolean {
+  let moved = false;
+  for (let i = 0; i < lift.press.length; i++) {
+    if (lift.press[i] !== 0) {
+      lift.press[i] = 0;
+      moved = true;
+    }
+  }
+  return moved;
+}
 
 export function createKeyLift(size = KEYS.length): KeyLift {
   return {
     y: new Float32Array(size),
     target: new Float32Array(size),
+    press: new Float32Array(size),
+    down: new Float32Array(size),
+    pressAt: -1,
+    pressK: 0,
     rev: 0,
     point: null,
     peak: 0,
@@ -171,6 +218,28 @@ export function stepKeyLift(lift: KeyLift, dt: number): boolean {
     if (lift.y[i] > peak) peak = lift.y[i];
   }
   lift.peak = peak / LIFT_HEIGHT;
+
+  // просадка идёт своей пружиной, заметно жёстче подъёма: нажатие - это
+  // щелчок, а не покачивание, и на общей мягкой пружине клавиша тонула
+  // и всплывала, как поплавок
+  let deep = 0;
+  for (let i = 0; i < lift.down.length; i++) {
+    const to = lift.press[i];
+    const from = lift.down[i];
+    const diff = to - from;
+    if (Math.abs(diff) > 1e-5) {
+      lift.down[i] = from + diff * (1 - Math.exp(-34 * step));
+      moved = true;
+    } else if (from !== to) {
+      lift.down[i] = to;
+      moved = true;
+    }
+    if (-lift.down[i] > deep) deep = -lift.down[i];
+  }
+  lift.pressK = Math.min(1, deep / PRESS_DEPTH);
+  // клавиша всплыла - свет под ней гаснет и отдаёт пятно курсору
+  if (lift.pressAt >= 0 && lift.pressK < 0.02) lift.pressAt = -1;
+
   if (moved) lift.rev++;
   return moved;
 }

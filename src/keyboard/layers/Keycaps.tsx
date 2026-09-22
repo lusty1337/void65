@@ -18,10 +18,15 @@ import { CHARCOAL, CHARCOAL_ALPHA } from '../materials';
 import { makeLegendAtlas, legendStretch } from '../keycapAtlas';
 import { paintLegend } from '../legendPaint';
 import { shared } from '../shared';
+import { LOW } from '../../stage/quality';
 
 // от BASE_URL, а не от корня: на Pages сайт живёт в подпапке домена,
-// и путь от корня уводит мимо файла. в разработке BASE_URL и так "/"
-const KEYCAPS_URL = `${import.meta.env.BASE_URL}keycaps.glb`;
+// и путь от корня уводит мимо файла. в разработке BASE_URL и так "/".
+//
+// на телефоне модель вдвое легче по треугольникам и по весу файла,
+// см. genKeycaps.mjs. отдаём её наружу: сорвавшийся колпачок обязан
+// брать ту же, иначе в кадре окажутся два разных колпачка
+export const KEYCAPS_URL = `${import.meta.env.BASE_URL}${LOW ? 'keycaps-low.glb' : 'keycaps.glb'}`;
 useGLTF.preload(KEYCAPS_URL);
 
 /** полуразмеры площадки печати легенды в мировых единицах */
@@ -137,7 +142,7 @@ export default function Keycaps({
   // матрицы собираются и на монтировании, и заново на каждом кадре
   // наведения, поэтому цикл один на оба случая. hop - подъём под курсором
   const write = useCallback(
-    (hop: Float32Array | null, fly: Float32Array | null, gap: number) => {
+    (hop: Float32Array | null, fly: Float32Array | null, dn: Float32Array | null, gap: number) => {
       const m = new THREE.Matrix4();
       const rot = new THREE.Quaternion();
       const pos = new THREE.Vector3();
@@ -158,7 +163,13 @@ export default function Keycaps({
           // клавиш лежат в одной плоскости, как на настоящей клавиатуре.
           // поворотом задиралась и подошва, отчего сбоку зияла щель
           rot.identity();
-          pos.set(key.x, ROW_STEP[key.row] + (hop ? hop[index] : 0) + (fly ? fly[index] : 0), key.z);
+          pos.set(
+            key.x,
+            // подъём под курсором, разлёт в разборке и просадка от нажатия -
+            // три независимых хода одной и той же клавиши
+            ROW_STEP[key.row] + (hop ? hop[index] : 0) + (fly ? fly[index] : 0) + (dn ? dn[index] : 0),
+            key.z,
+          );
           // зазор абсолютный, а не пропорциональный: множитель 0.94 отнимал
           // шесть процентов ШИРИНЫ, и у пробела в 6.25 юнита выходило 7 мм
           // щели с каждой стороны вместо миллиметра
@@ -184,7 +195,7 @@ export default function Keycaps({
   );
 
   useLayoutEffect(() => {
-    write(lift ? lift.y : null, spread ? spread.y : null, loose?.current ?? -1);
+    write(lift ? lift.y : null, spread ? spread.y : null, lift ? lift.down : null, loose?.current ?? -1);
   }, [write, lift, spread, loose]);
 
   // пружину крутит KeyLiftDriver, здесь только сверяем счётчик: иначе два
@@ -197,7 +208,7 @@ export default function Keycaps({
     if (rev === seen.current && gap === seenLoose.current) return;
     seen.current = rev;
     seenLoose.current = gap;
-    write(lift ? lift.y : null, spread ? spread.y : null, gap);
+    write(lift ? lift.y : null, spread ? spread.y : null, lift ? lift.down : null, gap);
   });
 
   return (
