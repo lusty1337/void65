@@ -1,7 +1,7 @@
 import { useMemo, useRef, type MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import { createRevealUniforms, revealTwin, REVEAL_MAX } from '../keyboard/revealWave';
+import { createRevealUniforms, revealTwin, syncTwin, REVEAL_MAX } from '../keyboard/revealWave';
 import type { KeyboardLayers, LayerName } from '../keyboard/types';
 
 // клавиатура проступает круговой волной из центра, слой за слоем снизу
@@ -103,7 +103,11 @@ export default function RevealWave({
 
   const wear = (wave: boolean) => {
     worn.current = wave;
-    for (const d of dressed.current) d.mesh.material = wave ? d.wave : d.plain;
+    for (const d of dressed.current) {
+      // цвет штока к этому моменту мог поменяться выбором свитча
+      if (wave) syncTwin(d.plain, d.wave);
+      d.mesh.material = wave ? d.wave : d.plain;
+    }
   };
 
   // обычные материалы собираются в фоне, пока идёт вход. под заставкой

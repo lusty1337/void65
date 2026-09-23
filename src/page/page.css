@@ -14,7 +14,8 @@
 
   --bone:     #f4f2ea;
   --bone-2:   #9cae9f;
-  --bone-3:   #5f7365;
+  /* светлее исходного #5f7365: на чёрном фоне тот давал 4 к 1, до нормы не хватало */
+  --bone-3:   #687f6f;
 
   /* в полную силу: это цвет акцентных колпачков, и приглушить его -
      значит погасить единственный цвет на сайте */
@@ -111,7 +112,7 @@
 .v-note { margin: 0; font-size: 14px; line-height: 1.55; color: var(--bone-2); }
 .v-tag {
   font-family: var(--data);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -141,7 +142,7 @@
 /* "65" - формат раскладки и единственное число в имени, поэтому акцентом */
 .v-hero__title b { font-weight: inherit; color: var(--sage); }
 
-.v-hero__sub { margin-top: clamp(20px, 3.5vh, 44px); align-items: start; }
+.v-hero__sub { margin-top: clamp(14px, 2vh, 26px); align-items: start; }
 /* текст в верхней трети, остальное отдано сцене: клавиатура обязана
    дышать, а не подпирать строку снизу */
 .v-hero__screen > :last-child { margin-bottom: auto; }
@@ -159,7 +160,7 @@
   position: fixed; z-index: 0;
   left: var(--pad); bottom: var(--edge);
   display: flex; align-items: center; gap: 12px;
-  font-family: var(--data); font-size: 10px; letter-spacing: 0.2em;
+  font-family: var(--data); font-size: 11px; letter-spacing: 0.2em;
   text-transform: uppercase; color: var(--bone-3);
   opacity: 0; transition: opacity 0.5s ease;
 }
@@ -231,7 +232,7 @@
   letter-spacing: 0.06em; text-transform: uppercase;
 }
 .v-layer.is-live .v-layer__name { color: var(--sage); }
-.v-layer__spec { font-family: var(--data); font-size: 10px; letter-spacing: 0.08em; color: var(--bone-3); }
+.v-layer__spec { font-family: var(--data); font-size: 11px; letter-spacing: 0.08em; color: var(--bone-3); }
 .v-layer__note {
   display: grid; grid-template-rows: 0fr; opacity: 0;
   transition: grid-template-rows 0.42s cubic-bezier(0.33, 0, 0.2, 1), opacity 0.3s ease;
@@ -248,7 +249,7 @@
 /* остаток от убранного экрана со свитчами: цифры переехали к цене,
    туда, где их и читают */
 .v-spec { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid var(--line); }
-.v-spec dt { font-family: var(--data); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bone-3); }
+.v-spec dt { font-family: var(--data); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bone-3); }
 /* костяным, а не янтарным: акцент на сайте один и уже занят кнопкой
    заказа прямо над списком */
 .v-spec dd { margin: 0; font-family: var(--data); font-size: 12px; color: var(--bone); }
@@ -257,12 +258,14 @@
    и подсветки - тот же, что загорается в сцене. точка слева красится им,
    и это единственное место на сайте, где цвет не шалфейный.
    стоит на первом экране, под приглашением, а не в блоке заказа */
-.v-hero__pick { margin-top: clamp(14px, 2.4vh, 30px); }
+/* вплотную к тексту: на широком и невысоком экране отбивка опускала выбор
+   ровно на ближний угол клавиатуры, и он уходил под подложку ячеек */
+.v-hero__pick { margin-top: 0; }
 /* ширина не от колонок, а от содержимого: на узком мониторе четыре
    колонки из двенадцати - это двести пикселей, и имена свитчей ломаются
    пополам. нижняя граница держит их в строку, верхняя не даёт выбору
    растянуться на весь текстовый столбец */
-.v-hero__pickBox { grid-column: 1 / span 5; min-width: min(100%, 310px); max-width: 380px; }
+.v-hero__pickBox { grid-column: 1 / span 5; min-width: min(100%, 310px); max-width: 330px; }
 .v-hero__pickLabel { margin-bottom: 10px; }
 .v-pick {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
@@ -285,13 +288,13 @@
 /* выбранная точка светится тем же, чем светится плата под клавишами */
 .v-pick__opt.is-on .v-pick__dot { opacity: 1; box-shadow: 0 0 10px var(--tint); }
 .v-pick__name {
-  font-family: var(--data); font-size: 10px; color: var(--bone-3);
+  font-family: var(--data); font-size: 11px; color: var(--bone-3);
   white-space: nowrap;
   transition: color 0.25s ease;
 }
 .v-pick__opt.is-on .v-pick__name { color: var(--bone); }
 .v-pick__kind {
-  font-family: var(--data); font-size: 9px; letter-spacing: 0.14em;
+  font-family: var(--data); font-size: 11px; letter-spacing: 0.14em;
   text-transform: uppercase; color: var(--bone-3); opacity: 0.75;
 }
 
@@ -360,7 +363,7 @@
   padding: 18px var(--pad) 0;
   display: flex; align-items: baseline; justify-content: space-between; gap: 20px;
   border-top: 1px solid var(--line);
-  font-family: var(--data); font-size: 10px; letter-spacing: 0.1em; color: var(--bone-3);
+  font-family: var(--data); font-size: 11px; letter-spacing: 0.1em; color: var(--bone-3);
 }
 
 /* всё на заставке - CSS-анимации: главный поток в этот момент собирает
@@ -401,7 +404,7 @@
    табличные цифры - иначе проценты дёргают строку на каждой единице */
 .v-boot__row {
   width: 100%; display: flex; justify-content: space-between; gap: 12px;
-  font-family: var(--data); font-size: 9px; letter-spacing: 0.16em;
+  font-family: var(--data); font-size: 11px; letter-spacing: 0.16em;
   text-transform: uppercase; color: var(--bone-3);
   font-variant-numeric: tabular-nums;
 }
@@ -499,20 +502,20 @@
   .v-hero__pickLabel { margin-bottom: 0; }
   .v-pick { flex: 0 1 260px; }
   .v-pick__opt { padding: 7px 6px 8px; gap: 4px; }
-  .v-pick__name { font-size: 9px; }
-  .v-pick__kind { font-size: 8px; letter-spacing: 0.1em; }
+  .v-pick__name { font-size: 11px; }
+  .v-pick__kind { font-size: 11px; letter-spacing: 0.1em; }
   .v-foot { margin-top: 14px; padding-top: 10px; }
 }
 
 /* мелкий телефон: заголовок перестаёт помещаться в строку раньше всего */
 @media (max-width: 420px) {
   .v-display { font-size: clamp(46px, 15vw, 64px); }
-  .v-hero__specs { gap: 14px; font-size: 10px; }
+  .v-hero__specs { gap: 14px; font-size: 11px; }
   .v-layer__spec { display: none; }
   /* имена свитчей моноширинные, и втроём в ряд они первыми упираются
      в ширину экрана */
   .v-pick__opt { padding: 9px 7px 10px; gap: 5px; }
-  .v-pick__kind { font-size: 8px; letter-spacing: 0.1em; }
+  .v-pick__kind { font-size: 11px; letter-spacing: 0.1em; }
 }
 
 /* наведения на тач-устройстве нет, ловить сценой нечего. а вред есть:

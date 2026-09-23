@@ -34,6 +34,24 @@ export function createRevealUniforms(): RevealUniforms {
 // не меняются
 const twins = new WeakMap<THREE.Material, THREE.Material>();
 
+/**
+ * перенести в двойник то, что на странице всё-таки меняется. двойник снимается
+ * один раз, а цвет штока переставляет выбор свитча на первом экране: без переноса
+ * вторая волна, та что над ценой, проявляет шток тем цветом, каким он был на входе
+ */
+export function syncTwin(
+  plain: THREE.Material | THREE.Material[],
+  twin: THREE.Material | THREE.Material[],
+) {
+  const from = Array.isArray(plain) ? plain : [plain];
+  const to = Array.isArray(twin) ? twin : [twin];
+  for (let i = 0; i < from.length; i += 1) {
+    const src = from[i] as THREE.MeshStandardMaterial | undefined;
+    const dst = to[i] as THREE.MeshStandardMaterial | undefined;
+    if (src?.color && dst?.color) dst.color.copy(src.color);
+  }
+}
+
 export function revealTwin(mat: THREE.Material, u: RevealUniforms): THREE.Material {
   let twin = twins.get(mat);
   if (!twin) {
